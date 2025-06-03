@@ -2,19 +2,18 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAnalytics } from "firebase/analytics"; // Added as per user's snippet
 
-// IMPORTANT: REPLACE THE PLACEHOLDER VALUES BELOW WITH THE ACTUAL CONFIGURATION
-// VALUES FROM YOUR *NEW* FIREBASE PROJECT.
-// You can find these in the Firebase console:
-// Project settings > General > Your apps > (select your web app) > SDK setup and configuration.
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY_HERE",
-  authDomain: "YOUR_AUTH_DOMAIN_HERE",
-  projectId: "YOUR_PROJECT_ID_HERE",
-  storageBucket: "YOUR_STORAGE_BUCKET_HERE",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID_HERE",
-  appId: "YOUR_APP_ID_HERE",
-  measurementId: "YOUR_MEASUREMENT_ID_HERE" // Optional, but usually provided
+  apiKey: "AIzaSyAI3WF7TY3yOoEaTEzysHx8Lrutu6Tlj3Q",
+  authDomain: "votesessionclassroom.firebaseapp.com",
+  projectId: "votesessionclassroom",
+  storageBucket: "votesessionclassroom.firebasestorage.app", // Corrected from .firebasestorage.app to .appspot.com if it was a typo, but using provided
+  messagingSenderId: "315788377527",
+  appId: "1:315788377527:web:e02bbcdf9e683943ec3c32",
+  measurementId: "G-SJ8SRNPQMT"
 };
 
 // Initialize Firebase
@@ -25,37 +24,44 @@ if (!getApps().length) {
   app = getApp();
 }
 
+// Initialize Analytics
+try {
+  if (typeof window !== 'undefined') { // Ensure Analytics is initialized only on client
+    getAnalytics(app);
+  }
+} catch (error) {
+  console.warn("Firebase Analytics initialization error (this is often safe to ignore during SSR or if Analytics is not critical):", (error instanceof Error ? error.message : String(error)));
+}
+
+
 let db;
 let auth;
 
+// Initialize Firestore and Auth, and set up anonymous sign-in
 try {
   db = getFirestore(app);
   auth = getAuth(app);
 
   // Attempt anonymous sign-in if no user is signed in
-  onAuthStateChanged(auth, (user) => {
-    if (!user) {
-      signInAnonymously(auth)
-        .then(() => {
-          console.log("Anonymous sign-in successful or user already signed in.");
-        })
-        .catch((error) => {
-          console.error("Error during anonymous sign-in: ", error.message);
-          // This error is expected if Firebase config is still placeholder or incorrect
-          if (firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
-            console.warn("Firebase configuration appears to be using placeholder values. Anonymous sign-in will fail until these are updated with your actual project configuration from the Firebase console.");
-          }
-        });
-    }
-  });
-
+  // This will only run on the client-side where auth state is meaningful
+  if (typeof window !== 'undefined') {
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        signInAnonymously(auth)
+          .then(() => {
+            console.log("Firebase: Anonymous sign-in successful or user already signed in.");
+          })
+          .catch((error) => {
+            console.error("Firebase: Error during anonymous sign-in: ", (error instanceof Error ? error.message : String(error)));
+            // No alert here, console error is sufficient
+          });
+      }
+    });
+  }
 } catch (error) {
   console.error("CRITICAL FIREBASE INITIALIZATION ERROR (during getFirestore/getAuth): ", (error instanceof Error ? error.message : String(error)));
-  if (firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
-    alert("CRITICAL FIREBASE CONFIGURATION ERROR: The Firebase configuration in src/lib/firebase.ts is using placeholder values. Please replace them with the actual values from your Firebase project console.");
-  } else {
-    alert("CRITICAL FIREBASE INITIALIZATION ERROR. Check console for details. This might be due to incorrect Firebase config values or services not being properly enabled in the Firebase console.");
-  }
+  // Avoid alert in production environments or if it's too disruptive.
+  // Consider more sophisticated error handling for production.
 }
 
 export { app, db, auth };
