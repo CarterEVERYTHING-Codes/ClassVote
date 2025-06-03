@@ -8,7 +8,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 // Firebase services WILL NOT WORK with this key.
 // You MUST obtain a REAL API key for your project from the web app settings in the Firebase Console.
 // The Service Account JSON (with a "private_key") is for SERVER-SIDE use, NOT for this client-side apiKey.
-const FIREBASE_API_KEY = "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM"; // <-- THIS IS THE PLACEHOLDER. REPLACE IT.
+const FIREBASE_API_KEY = "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM"; // <-- THIS IS THE PROBLEMATIC PLACEHOLDER.
 
 if (FIREBASE_API_KEY === "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM" || FIREBASE_API_KEY.includes("YOUR_API_KEY_PLACEHOLDER_TEXT")) {
   const errorMessage =
@@ -29,13 +29,13 @@ if (FIREBASE_API_KEY === "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM" || FIREBASE_A
 }
 
 const firebaseConfig = {
-  apiKey: FIREBASE_API_KEY, // Uses the constant defined above
+  apiKey: FIREBASE_API_KEY, // Uses the problematic placeholder constant defined above
   authDomain: "leaderboard-db5ff.firebaseapp.com",
   projectId: "leaderboard-db5ff",
-  storageBucket: "leaderboard-db5ff.firebasestorage.app", // Updated to user's latest value
+  storageBucket: "leaderboard-db5ff.firebasestorage.app",
   messagingSenderId: "525185216052",
-  appId: "1:525185216052:web:25c740835b773d0920e461", // Updated to user's latest value
-  measurementId: "G-F5L13SZJKP" // Updated to user's latest value
+  appId: "1:525185216052:web:25c740835b773d0920e461",
+  measurementId: "G-F5L13SZJKP"
 };
 
 // Initialize Firebase
