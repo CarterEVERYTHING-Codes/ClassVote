@@ -3,9 +3,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData } from 'firebase/firestore'; // Added DocumentData
+import { doc, onSnapshot, updateDoc, DocumentData } from 'firebase/firestore'; 
 import { auth, db } from '@/lib/firebase';
-import { User, onAuthStateChanged } from 'firebase/auth'; // Import User and onAuthStateChanged
+import { User, onAuthStateChanged } from 'firebase/auth'; 
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 import Leaderboard from '@/components/leaderboard';
 import { Button } from '@/components/ui/button';
@@ -34,7 +34,7 @@ export default function SessionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
+  const [currentUser, setCurrentUser] = useState<User | null>(null); // Initialize to null
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
 
@@ -54,7 +54,7 @@ export default function SessionPage() {
       return;
     }
 
-    setIsLoading(true); // Reset loading state for new sessionId
+    setIsLoading(true); 
     const sessionDocRef = doc(db, 'sessions', sessionId);
     const unsubscribeFirestore = onSnapshot(sessionDocRef, (docSnap) => {
       setIsLoading(false);
@@ -68,7 +68,7 @@ export default function SessionPage() {
         }
       } else {
         setSessionData(null);
-        setError("This session cannot be found.");
+        setError("This session cannot be found or has been ended by the admin.");
       }
     }, (err) => {
       console.error("Error fetching session data: ", err);
@@ -121,20 +121,13 @@ export default function SessionPage() {
   };
 
   const handleEndSession = async () => {
-    if (!isCurrentUserAdmin) {
-      toast({ title: "Permissions Error", description: "Only the admin can end the session.", variant: "destructive" });
+    // The button is only rendered if:
+    // isCurrentUserAdmin is true, sessionData exists, and !sessionData.sessionEnded is true.
+    // This simplifies the checks needed within this function.
+
+    if (isProcessingAdminAction) {
+      toast({ title: "Processing", description: "Previous action is still processing. Please wait.", variant: "default" });
       return;
-    }
-    if (sessionData && sessionData.sessionEnded) {
-      toast({ title: "Session Status", description: "This session has already been ended.", variant: "default" });
-      // Optionally redirect if admin is on an already ended session page and clicks again
-      if (router && typeof router.push === 'function') router.push('/');
-      return;
-    }
-    if (isProcessingAdminAction) return;
-    if (!sessionData) { // Should not happen if button is visible, but as a safeguard
-        toast({ title: "Error", description: "Session data not available.", variant: "destructive" });
-        return;
     }
 
     if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) {
@@ -144,6 +137,7 @@ export default function SessionPage() {
     setIsProcessingAdminAction(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
+      // Core action: Update Firestore document
       await updateDoc(sessionDocRef, { 
         sessionEnded: true, 
         isRoundActive: false // Also ensure the round is explicitly stopped
@@ -151,13 +145,16 @@ export default function SessionPage() {
       
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
       
+      // Redirect admin to homepage
       if (router && typeof router.push === 'function') {
         router.push('/');
       } else {
         console.error("Router not available for admin redirection after ending session.");
-        // If redirection fails, we should ideally reset isProcessingAdminAction,
-        // but the session is ended, so the button should disappear anyway.
+        // If redirection fails, allow further actions if needed by resetting processing state.
+        setIsProcessingAdminAction(false); 
       }
+      // If redirection is successful, this component will unmount,
+      // so setIsProcessingAdminAction(false) is not strictly needed here.
     } catch (error) {
       let errorMessage = "Could not end session. Please try again.";
       if (error instanceof FirebaseError) {
@@ -167,7 +164,7 @@ export default function SessionPage() {
       }
       console.error("Error ending session details: ", error);
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
-      setIsProcessingAdminAction(false); 
+      setIsProcessingAdminAction(false); // Crucial to reset state on error
     }
   };
 
@@ -193,9 +190,8 @@ export default function SessionPage() {
     );
   }
 
-  if (error && (!sessionData || sessionData.sessionEnded || error === "This session cannot be found.")) { 
-    // This condition covers: explicit "session ended" error, or general error when sessionData is null (e.g. not found),
-    // or if sessionData exists but sessionEnded is true.
+  // This covers: session ended explicitly, or general error when sessionData is null (e.g., not found or deleted).
+  if (error && (!sessionData || sessionData.sessionEnded || error.includes("cannot be found") || error.includes("has ended"))) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
@@ -207,12 +203,12 @@ export default function SessionPage() {
       </main>
     );
   }
-
+  
+  // Fallback if still loading or truly no data without a specific "not found" or "ended" error
   if (!sessionData) { 
-    // Fallback if still loading or truly no data without a specific "not found" or "ended" error
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <p className="text-lg text-muted-foreground">Session data is currently unavailable.</p>
+        <p className="text-lg text-muted-foreground">Session data is currently unavailable or being loaded.</p>
         <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
             <Home className="mr-2" /> Go to Homepage
         </Button>
@@ -277,7 +273,7 @@ export default function SessionPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center">
-            <p className="text-muted-foreground mb-4">This session has been ended by an admin.</p>
+            <p className="text-muted-foreground mb-4">This session has been ended.</p>
              <Button onClick={() => router.push('/')} variant="outline"> Go to Homepage </Button>
           </CardContent>
          </Card>
