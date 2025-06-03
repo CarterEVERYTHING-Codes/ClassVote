@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowRight, PlusCircle } from 'lucide-react';
-import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
+// Removed dynamic import of GoodBadButtonsLoader as it's not used on this page directly anymore
 
 export default function HomePage() {
   const router = useRouter();
@@ -20,10 +20,15 @@ export default function HomePage() {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  // We will use auth.currentUser directly, no need for a separate currentUser state here for now
+  // as onAuthStateChanged updates the global auth.currentUser. We just need to react to it.
 
   useEffect(() => {
+    // This listener ensures our component re-renders when auth state changes,
+    // allowing the button's disabled/text state to update based on auth.currentUser.
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsAuthLoading(false); // Auth state is now determined (user might be null or an object)
+      setIsAuthLoading(false); // Signifies that the initial auth state check has completed.
+                               // auth.currentUser will be null or a user object.
     });
     return () => unsubscribe(); // Cleanup subscription on unmount
   }, []);
@@ -34,11 +39,8 @@ export default function HomePage() {
 
   const handleCreateSession = async () => {
     setIsCreating(true);
-    if (isAuthLoading) { // Should ideally be caught by disabled button state
-        toast({ title: "Authentication Pending", description: "Please wait for authentication to complete.", variant: "default" });
-        setIsCreating(false);
-        return;
-    }
+    // The button's disabled state should prevent this function from being called prematurely.
+    // However, this check is a safeguard.
     if (!auth.currentUser) {
       toast({ title: "Authentication Error", description: "Please wait for authentication to complete and try again.", variant: "destructive" });
       setIsCreating(false);
@@ -50,7 +52,7 @@ export default function HomePage() {
       const sessionRef = doc(db, 'sessions', newSessionId);
       await setDoc(sessionRef, {
         adminUid: auth.currentUser.uid,
-        isRoundActive: true,
+        isRoundActive: true, // New sessions start with an active round
         likeClicks: 0,
         dislikeClicks: 0,
         createdAt: new Date(),
@@ -62,7 +64,7 @@ export default function HomePage() {
       toast({ title: "Error", description: "Could not create session. Please try again.", variant: "destructive" });
       setIsCreating(false);
     }
-    // No setIsCreating(false) here, as navigation should occur. If error, it's set above.
+    // No setIsCreating(false) here if navigation occurs.
   };
 
   const handleJoinSession = async () => {
@@ -86,6 +88,13 @@ export default function HomePage() {
     setIsJoining(false);
   };
 
+  const createButtonDisabled = isCreating || isAuthLoading || !auth.currentUser;
+  const createButtonText = () => {
+    if (isAuthLoading || !auth.currentUser) return 'Authenticating...';
+    if (isCreating) return 'Creating...';
+    return 'Create Session';
+  };
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6 sm:p-12 md:p-16 bg-background space-y-8">
       <div className="text-center mb-8">
@@ -107,9 +116,9 @@ export default function HomePage() {
             <Button 
               onClick={handleCreateSession} 
               className="w-full text-lg py-6" 
-              disabled={isCreating || isAuthLoading}
+              disabled={createButtonDisabled}
             >
-              {isAuthLoading ? 'Authenticating...' : (isCreating ? 'Creating...' : 'Create Session')}
+              {createButtonText()}
             </Button>
           </CardContent>
         </Card>
