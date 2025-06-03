@@ -1,10 +1,11 @@
+
 import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'Good or Bad Sounds',
-  description: 'Press buttons to hear sounds!',
+  title: 'Sound Vote Sessions',
+  description: 'Create or join sessions to vote on sounds!',
 };
 
 export default function RootLayout({
