@@ -7,27 +7,26 @@ import { ThumbsUp, ThumbsDown } from "lucide-react";
 import * as Tone from "tone";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, increment, getDoc, setDoc, FirebaseError } from "firebase/firestore";
+import { doc, updateDoc, increment, getDoc, FirebaseError } from "firebase/firestore";
 
 interface GoodBadButtonsProps {
   sessionId: string;
-  isRoundActiveInitially: boolean; 
+  isRoundActive: boolean; // Changed from isRoundActiveInitially
 }
 
-const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiveInitially }) => {
+const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp }) => { // Renamed prop for clarity
   const { toast } = useToast();
   const likeSynth = useRef<Tone.Synth | null>(null);
   const dislikeSynth = useRef<Tone.Synth | null>(null);
   
-  // isRoundActive is now primarily controlled by the parent SessionPage via props
-  const [isRoundActive, setIsRoundActive] = useState(isRoundActiveInitially);
-  const [isLoadingStatus, setIsLoadingStatus] = useState(false); // No longer fetching status here directly
+  const [internalIsRoundActive, setInternalIsRoundActive] = useState(isRoundActiveProp);
+  const [isLoadingClick, setIsLoadingClick] = useState(false);
   const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
   const localStorageKey = `hasVoted_${sessionId}`;
 
   useEffect(() => {
-    setIsRoundActive(isRoundActiveInitially);
-    if (isRoundActiveInitially) {
+    setInternalIsRoundActive(isRoundActiveProp);
+    if (isRoundActiveProp) {
       const voted = localStorage.getItem(localStorageKey) === 'true';
       setHasVotedInCurrentRound(voted);
     } else {
@@ -35,7 +34,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       localStorage.removeItem(localStorageKey);
       setHasVotedInCurrentRound(false);
     }
-  }, [isRoundActiveInitially, localStorageKey]);
+  }, [isRoundActiveProp, localStorageKey]);
 
 
   useEffect(() => {
@@ -87,11 +86,10 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
     if (!sessionId) return false;
     const sessionDocRef = doc(db, 'sessions', sessionId);
     try {
-      // First, check if the round is still active on the server
       const currentSessionDoc = await getDoc(sessionDocRef);
       if (!currentSessionDoc.exists() || !currentSessionDoc.data()?.isRoundActive) {
         toast({ title: "Vote Not Counted", description: "The round may have just ended or the session is closed.", variant: "default" });
-        setIsRoundActive(false); // Update local state
+        setInternalIsRoundActive(false); 
         localStorage.removeItem(localStorageKey);
         setHasVotedInCurrentRound(false);
         return false;
@@ -110,17 +108,16 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       } else {
           toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
       }
-      // If update fails, check current round status from server again
       const currentSessionDoc = await getDoc(sessionDocRef);
       if (currentSessionDoc.exists()) {
         const isActive = currentSessionDoc.data()?.isRoundActive ?? false;
-        setIsRoundActive(isActive);
+        setInternalIsRoundActive(isActive);
         if (!isActive) {
           localStorage.removeItem(localStorageKey);
           setHasVotedInCurrentRound(false);
         }
-      } else { // Session deleted
-        setIsRoundActive(false);
+      } else { 
+        setInternalIsRoundActive(false);
         localStorage.removeItem(localStorageKey);
         setHasVotedInCurrentRound(false);
       }
@@ -129,11 +126,11 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   };
 
   const playLikeSound = async () => {
-    if (!isRoundActive || isLoadingStatus || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
+    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
     
-    setIsLoadingStatus(true); // Prevent double clicks while processing
+    setIsLoadingClick(true); 
     const scoreUpdated = await updateScore('like');
-    setIsLoadingStatus(false);
+    setIsLoadingClick(false);
 
     if (scoreUpdated) {
       likeSynth.current?.triggerAttackRelease("C5", "8n", Tone.now());
@@ -143,11 +140,11 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   };
 
   const playDislikeSound = async () => {
-    if (!isRoundActive || isLoadingStatus || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
+    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
 
-    setIsLoadingStatus(true); // Prevent double clicks
+    setIsLoadingClick(true); 
     const scoreUpdated = await updateScore('dislike');
-    setIsLoadingStatus(false);
+    setIsLoadingClick(false);
 
     if (scoreUpdated) {
       dislikeSynth.current?.triggerAttackRelease("C3", "4n", Tone.now());
@@ -156,11 +153,10 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   };
   
   const pulseAnimationClass = "active:scale-95 transform transition-transform duration-150 ease-in-out";
-  const buttonDisabledState = !isRoundActive || isLoadingStatus || hasVotedInCurrentRound;
+  const buttonDisabledState = !internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound;
   const disabledClass = buttonDisabledState ? "opacity-50 cursor-not-allowed" : "";
 
-  // isLoadingStatus for buttons refers to the processing of a click, not initial load of component
-  if (isLoadingStatus && !buttonDisabledState) { // Show specific loading on buttons if processing click
+  if (isLoadingClick && !buttonDisabledState) { 
       return (
         <div className="flex flex-col items-center space-y-4">
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
@@ -196,12 +192,12 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
           <ThumbsDown className="mr-3 h-6 w-6" /> Dislike
         </Button>
       </div>
-      {hasVotedInCurrentRound && isRoundActive && (
+      {hasVotedInCurrentRound && internalIsRoundActive && (
         <p className="mt-2 text-sm text-muted-foreground">
           You have already voted in this round.
         </p>
       )}
-       {!isRoundActive && ( // Removed !isLoadingStatus because status is now from props
+       {!internalIsRoundActive && (
         <p className="mt-2 text-sm font-semibold text-orange-600 dark:text-orange-400">
           The current round has ended. Please wait for the admin to start a new round.
         </p>
@@ -211,3 +207,5 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
 };
 
 export default GoodBadButtons;
+
+    
