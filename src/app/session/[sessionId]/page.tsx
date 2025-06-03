@@ -47,18 +47,13 @@ export default function SessionPage() {
         if (auth.currentUser) {
           setIsCurrentUserAdmin(auth.currentUser.uid === data.adminUid);
         }
-        setError(null);
-      } else {
+        setError(null); // Clear any previous errors if session now exists
+      } else { // Document does not exist (e.g., ended by admin or never existed)
         setSessionData(null);
         setIsCurrentUserAdmin(false);
-        setError("Session not found or has been ended. You will be redirected.");
-        toast({ title: "Session Ended", description: "This session no longer exists.", variant: "destructive" });
-        setTimeout(() => {
-            // Check if router is available and then push
-            if (router && typeof router.push === 'function') {
-                router.push('/');
-            }
-        }, 3000);
+        setError("This session has ended or cannot be found.");
+        toast({ title: "Session Update", description: "The session has ended or cannot be found.", variant: "default" });
+        // NO AUTOMATIC REDIRECT FOR NON-ADMINS HERE
       }
       setIsLoading(false);
     }, (err) => {
@@ -69,20 +64,22 @@ export default function SessionPage() {
     });
 
     const unsubscribeAuth = auth.onAuthStateChanged(user => {
-      if (user && sessionData) { // sessionData here is the state variable
-        setIsCurrentUserAdmin(user.uid === sessionData.adminUid);
-      } else if (!user) { // User logged out
-        setIsCurrentUserAdmin(false);
-      }
-      // If user is present but sessionData is null (e.g. after deletion or initial load),
-      // the Firestore listener will correctly set/unset admin status.
+      // Check if sessionData is available from the current state, not a stale closure
+      setSessionData(currentSessionData => {
+        if (user && currentSessionData) {
+          setIsCurrentUserAdmin(user.uid === currentSessionData.adminUid);
+        } else if (!user) {
+          setIsCurrentUserAdmin(false);
+        }
+        return currentSessionData; // Return currentSessionData to ensure state is not unintentionally changed
+      });
     });
 
     return () => {
       unsubscribeFirestore();
       unsubscribeAuth();
     };
-  }, [sessionId, router, toast, sessionData]); // sessionData is included to re-evaluate admin status if it changes.
+  }, [sessionId, router, toast]); // Removed sessionData from dependencies as onAuthStateChanged now uses a functional update for setSessionData
 
 
   const handleToggleRound = async () => {
@@ -115,21 +112,23 @@ export default function SessionPage() {
     if (!isCurrentUserAdmin) return;
     if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) return;
     
-    setIsLoading(true); // Indicate an operation is in progress
+    // Optimistically set loading state for the admin's UI
+    const adminPageIsLoading = true; 
+    if (typeof setIsLoading === 'function') setIsLoading(adminPageIsLoading);
+
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await deleteDoc(sessionDocRef);
       toast({ title: "Session Ended", description: "The session has been closed. Redirecting..." });
-      // Admin is redirected immediately. Other users will be redirected by their onSnapshot listener.
+      // Admin is redirected immediately.
       if (router && typeof router.push === 'function') {
-        router.push('/');
+        router.push('/'); 
       }
     } catch (error) {
       console.error("Error ending session: ", error);
       toast({ title: "Error", description: "Could not end session. Please try again.", variant: "destructive" });
-      setIsLoading(false); // Reset loading state on error
+      if (typeof setIsLoading === 'function') setIsLoading(false); // Reset loading state on error
     }
-    // No need to set isLoading to false on success if navigating away.
   };
 
   const copySessionCode = () => {
@@ -138,7 +137,8 @@ export default function SessionPage() {
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
-  if (isLoading && !error && !sessionData) { // More specific loading state check
+  // Display loading skeletons only if truly loading and no error/session data yet
+  if (isLoading && !error && !sessionData) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <Skeleton className="h-10 w-64 mb-4" />
@@ -153,11 +153,13 @@ export default function SessionPage() {
     );
   }
 
+  // If there's an error (e.g., session ended, loading failed), display it.
+  // This will now catch the "This session has ended or cannot be found." error for non-admins.
   if (error) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
-        <h1 className="text-2xl font-bold text-destructive mb-2">Session Error</h1>
+        <h1 className="text-2xl font-bold text-destructive mb-2">Session Status</h1>
         <p className="text-muted-foreground">{error}</p>
          <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
             <Home className="mr-2" /> Go to Homepage
@@ -166,10 +168,25 @@ export default function SessionPage() {
     );
   }
 
-  if (!sessionData && !isLoading) { // If not loading and no session data (and no error that already rendered)
+  // If still loading but there's no error and no session data, this implies the first snapshot hasn't returned yet or is processing.
+  // This is slightly different from the initial full-page skeleton.
+  if (isLoading && !sessionData) {
+    return (
+        <main className="flex min-h-screen flex-col items-center justify-center p-6">
+            <p>Loading session information...</p>
+            <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
+                <Home className="mr-2" /> Go to Homepage
+            </Button>
+        </main>
+    );
+  }
+
+
+  // Fallback if no session data, not loading, and no error (should be rare if error state is managed well)
+  if (!sessionData) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <p className="text-lg text-muted-foreground">Session data not available or session has ended.</p>
+        <p className="text-lg text-muted-foreground">Session data is not available.</p>
         <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
             <Home className="mr-2" /> Go to Homepage
         </Button>
@@ -177,17 +194,6 @@ export default function SessionPage() {
     );
   }
   
-  // Ensure sessionData is not null before trying to access its properties
-  if (!sessionData) {
-    // This case should ideally be covered by isLoading or error states,
-    // but it's a safeguard.
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6">
-          <p>Loading session information...</p>
-      </main>
-    );
-  }
-
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-6 sm:p-12 md:p-16 bg-background space-y-8">
@@ -230,15 +236,13 @@ export default function SessionPage() {
               <RotateCcw className="mr-2" /> Clear Scores & Reset Votes
             </Button>
             <Button onClick={handleEndSession} variant="destructive" className="w-full" disabled={isLoading}>
-              <Trash2 className="mr-2" /> End Session
+              <Trash2 className="mr-2" /> End Session & Go Home
             </Button>
-            <Button onClick={() => router.push('/')} variant="outline" className="w-full mt-4">
-                <Home className="mr-2" /> Go to Homepage
-            </Button>
+            {/* Removed Go to Homepage button from admin controls */}
           </CardContent>
         </Card>
       )}
-       {!isCurrentUserAdmin && sessionData && ( // Ensure sessionData exists before showing leave button
+       {!isCurrentUserAdmin && sessionData && (
          <Button onClick={() => router.push('/')} variant="outline" className="mt-12">
             <Home className="mr-2" /> Leave Session
         </Button>
