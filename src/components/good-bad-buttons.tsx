@@ -7,7 +7,7 @@ import { ThumbsUp, ThumbsDown } from "lucide-react";
 import * as Tone from "tone";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, increment, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, updateDoc, increment, onSnapshot, setDoc, FirebaseError } from "firebase/firestore";
 
 const GoodBadButtons: React.FC = () => {
   const { toast } = useToast();
@@ -20,31 +20,27 @@ const GoodBadButtons: React.FC = () => {
   useEffect(() => {
     const gameStatusDocRef = doc(db, 'gameAdmin', 'status');
     const unsubscribe = onSnapshot(gameStatusDocRef, (docSnap) => {
-      let currentRoundIsActive = true; // Default if not exists
+      let currentRoundIsActive = true; 
       if (docSnap.exists()) {
         currentRoundIsActive = docSnap.data()?.isRoundActive ?? true;
       } else {
-        // Initialize if document doesn't exist, default to active
         setDoc(gameStatusDocRef, { isRoundActive: true }, { merge: true });
       }
       setIsRoundActive(currentRoundIsActive);
 
-      // Manage "voted in current round" status based on round activity
       if (currentRoundIsActive) {
         const voted = localStorage.getItem('hasVotedGoodBadSoundGame') === 'true';
         setHasVotedInCurrentRound(voted);
       } else {
-        // Round is not active, so clear vote status for the next round
         localStorage.removeItem('hasVotedGoodBadSoundGame');
         setHasVotedInCurrentRound(false);
       }
       setIsLoadingStatus(false);
     }, (error) => {
       console.error("Error fetching game status for buttons: ", error);
-      // Fallback behavior on error
-      setIsRoundActive(true); // Default to active
+      setIsRoundActive(true); 
       const voted = localStorage.getItem('hasVotedGoodBadSoundGame') === 'true';
-      setHasVotedInCurrentRound(voted && true); // Check localStorage but respect default active state
+      setHasVotedInCurrentRound(voted && true); 
       setIsLoadingStatus(false);
     });
 
@@ -96,7 +92,7 @@ const GoodBadButtons: React.FC = () => {
     return true;
   };
 
-  const updateScore = async (type: 'good' | 'bad') => {
+  const updateScore = async (type: 'good' | 'bad'): Promise<boolean> => {
     const scoresDocRef = doc(db, 'leaderboard', 'scores');
     try {
       await updateDoc(scoresDocRef, {
@@ -104,14 +100,27 @@ const GoodBadButtons: React.FC = () => {
       });
       localStorage.setItem('hasVotedGoodBadSoundGame', 'true');
       setHasVotedInCurrentRound(true);
+      return true;
     } catch (error) {
         if ((error as any).code === 'not-found' || (error as any).message?.includes('No document to update')) {
-             await setDoc(scoresDocRef, { goodClicks: type === 'good' ? 1:0, badClicks: type === 'bad' ? 1:0 }, {merge: true});
-             localStorage.setItem('hasVotedGoodBadSoundGame', 'true');
-             setHasVotedInCurrentRound(true);
+            try {
+                await setDoc(scoresDocRef, { goodClicks: type === 'good' ? 1:0, badClicks: type === 'bad' ? 1:0 }, {merge: true});
+                localStorage.setItem('hasVotedGoodBadSoundGame', 'true');
+                setHasVotedInCurrentRound(true);
+                return true;
+            } catch (initError) {
+                console.error("Error initializing score: ", initError);
+                toast({ title: "Score Update Error", description: "Could not initialize score.", variant: "destructive" });
+                return false;
+            }
         } else {
             console.error("Error updating score: ", error);
-            toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
+            if ((error as FirebaseError)?.code === 'permission-denied') {
+                 toast({ title: "Vote Not Counted", description: "The round may have just ended.", variant: "default" });
+            } else {
+                toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
+            }
+            return false;
         }
     }
   };
@@ -119,25 +128,29 @@ const GoodBadButtons: React.FC = () => {
   const playGoodSound = async () => {
     if (!isRoundActive || isLoadingStatus || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
     try {
-      goodSynth.current?.triggerAttackRelease("C5", "8n", Tone.now());
-      setTimeout(() => goodSynth.current?.triggerAttackRelease("E5", "8n", Tone.now() + 0.1), 50);
-      setTimeout(() => goodSynth.current?.triggerAttackRelease("G5", "8n", Tone.now() + 0.2), 100);
-      await updateScore('good');
+      const scoreUpdated = await updateScore('good');
+      if (scoreUpdated) {
+        goodSynth.current?.triggerAttackRelease("C5", "8n", Tone.now());
+        setTimeout(() => goodSynth.current?.triggerAttackRelease("E5", "8n", Tone.now() + 0.1), 50);
+        setTimeout(() => goodSynth.current?.triggerAttackRelease("G5", "8n", Tone.now() + 0.2), 100);
+      }
     } catch (error) {
-      console.error("Error playing good sound:", error);
-      toast({ title: "Sound Error", description: "Could not play the 'good' sound.", variant: "destructive" });
+      console.error("Error in playGoodSound logic:", error);
+      toast({ title: "Action Error", description: "Could not perform 'good' action.", variant: "destructive" });
     }
   };
 
   const playBadSound = async () => {
     if (!isRoundActive || isLoadingStatus || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
     try {
-      badSynth.current?.triggerAttackRelease("C3", "4n", Tone.now());
-      setTimeout(() => badSynth.current?.triggerAttackRelease("C#3", "4n", Tone.now() + 0.05), 25);
-      await updateScore('bad');
+      const scoreUpdated = await updateScore('bad');
+      if (scoreUpdated) {
+        badSynth.current?.triggerAttackRelease("C3", "4n", Tone.now());
+        setTimeout(() => badSynth.current?.triggerAttackRelease("C#3", "4n", Tone.now() + 0.05), 25);
+      }
     } catch (error) {
-      console.error("Error playing bad sound:", error);
-      toast({ title: "Sound Error", description: "Could not play the 'bad' sound.", variant: "destructive" });
+      console.error("Error in playBadSound logic:", error);
+      toast({ title: "Action Error", description: "Could not perform 'bad' action.", variant: "destructive" });
     }
   };
   
@@ -195,3 +208,4 @@ const GoodBadButtons: React.FC = () => {
 };
 
 export default GoodBadButtons;
+
