@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import crypto from 'crypto';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase'; // auth is imported
@@ -28,7 +29,9 @@ export default function HomePage() {
   }, []);
 
   const generateSessionCode = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    const randomBytes = crypto.randomBytes(4); // Generate 4 random bytes
+    const randomNumber = randomBytes.readUInt32BE(0) % 900000; // Convert to a number and limit range
+    return (100000 + randomNumber).toString(); // Ensure 6-digit code
   };
 
   const handleCreateSession = async () => {
