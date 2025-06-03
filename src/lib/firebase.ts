@@ -12,10 +12,10 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 const FIREBASE_API_KEY = "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM"; // <-- !!! REPLACE THIS !!!
 
 if (FIREBASE_API_KEY === "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM" || FIREBASE_API_KEY.includes("YOUR_API_KEY")) {
-  console.error(
-    "CRITICAL FIREBASE CONFIGURATION ERROR: The API key in src/lib/firebase.ts is a placeholder. " +
+  console.warn(
+    "IMPORTANT FIREBASE CONFIGURATION WARNING: The API key in src/lib/firebase.ts appears to be a placeholder. " +
     "Please replace it with your actual Firebase project's API key. " +
-    "Firebase services will not work correctly until this is fixed."
+    "Firebase services will not function correctly until this is fixed."
   );
   // Optionally, you could throw an error here to halt execution during development:
   // throw new Error("Placeholder Firebase API Key detected. Update src/lib/firebase.ts");
