@@ -3,8 +3,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData } from 'firebase/firestore'; // Added DocumentData
 import { auth, db } from '@/lib/firebase';
+import { User, onAuthStateChanged } from 'firebase/auth'; // Import User and onAuthStateChanged
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 import Leaderboard from '@/components/leaderboard';
 import { Button } from '@/components/ui/button';
@@ -12,14 +13,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FirebaseError } from 'firebase/app';
 
 interface SessionData {
   adminUid: string;
   isRoundActive: boolean;
   likeClicks: number;
   dislikeClicks: number;
-  createdAt: any; // Firestore timestamp
-  sessionEnded: boolean; // New field
+  createdAt: any; 
+  sessionEnded: boolean;
 }
 
 export default function SessionPage() {
@@ -30,41 +32,43 @@ export default function SessionPage() {
 
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
+  const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
 
+  // Effect for Auth State
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Effect for Firestore Data
   useEffect(() => {
     if (!sessionId) {
-        setIsLoading(false);
-        setError("No session ID provided.");
-        return;
+      setIsLoading(false);
+      setError("No session ID provided.");
+      return;
     }
 
+    setIsLoading(true); // Reset loading state for new sessionId
     const sessionDocRef = doc(db, 'sessions', sessionId);
     const unsubscribeFirestore = onSnapshot(sessionDocRef, (docSnap) => {
       setIsLoading(false);
       if (docSnap.exists()) {
         const data = docSnap.data() as SessionData;
-        setSessionData(data); // Set session data regardless of sessionEnded status for UI elements like session ID copy
-
-        if (auth.currentUser) {
-          setIsCurrentUserAdmin(auth.currentUser.uid === data.adminUid);
-        } else {
-          setIsCurrentUserAdmin(false);
-        }
-
+        setSessionData(data);
         if (data.sessionEnded) {
           setError("This session has ended.");
-          // Admin would have already been redirected. Non-admins see the error.
         } else {
-          setError(null); // Clear any previous errors if session now exists and is not ended
+          setError(null); 
         }
       } else {
         setSessionData(null);
-        setIsCurrentUserAdmin(false);
         setError("This session cannot be found.");
-        // No automatic redirect here for non-admins
       }
     }, (err) => {
       console.error("Error fetching session data: ", err);
@@ -73,26 +77,21 @@ export default function SessionPage() {
       setIsLoading(false);
     });
 
-    const unsubscribeAuth = auth.onAuthStateChanged(user => {
-      setSessionData(currentSessionData => {
-        if (user && currentSessionData) {
-          setIsCurrentUserAdmin(user.uid === currentSessionData.adminUid);
-        } else if (!user) {
-          setIsCurrentUserAdmin(false);
-        }
-        return currentSessionData;
-      });
-    });
+    return () => unsubscribeFirestore();
+  }, [sessionId, toast]);
 
-    return () => {
-      unsubscribeFirestore();
-      unsubscribeAuth();
-    };
-  }, [sessionId, router, toast]);
+  // Effect to determine admin status
+  useEffect(() => {
+    if (currentUser && sessionData) {
+      setIsCurrentUserAdmin(currentUser.uid === sessionData.adminUid);
+    } else {
+      setIsCurrentUserAdmin(false);
+    }
+  }, [currentUser, sessionData]);
 
 
   const handleToggleRound = async () => {
-    if (!sessionData || !isCurrentUserAdmin || sessionData.sessionEnded || isProcessingAdminAction) return;
+    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || isProcessingAdminAction) return;
     setIsProcessingAdminAction(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
@@ -107,7 +106,7 @@ export default function SessionPage() {
   };
   
   const handleClearScores = async () => {
-    if (!sessionData || !isCurrentUserAdmin || sessionData.sessionEnded || isProcessingAdminAction) return;
+    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || isProcessingAdminAction) return;
     setIsProcessingAdminAction(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
@@ -122,33 +121,64 @@ export default function SessionPage() {
   };
 
   const handleEndSession = async () => {
-    if (!isCurrentUserAdmin || (sessionData && sessionData.sessionEnded) || isProcessingAdminAction) return;
-    if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) return;
+    if (!isCurrentUserAdmin) {
+      toast({ title: "Permissions Error", description: "Only the admin can end the session.", variant: "destructive" });
+      return;
+    }
+    if (sessionData && sessionData.sessionEnded) {
+      toast({ title: "Session Status", description: "This session has already been ended.", variant: "default" });
+      // Optionally redirect if admin is on an already ended session page and clicks again
+      if (router && typeof router.push === 'function') router.push('/');
+      return;
+    }
+    if (isProcessingAdminAction) return;
+    if (!sessionData) { // Should not happen if button is visible, but as a safeguard
+        toast({ title: "Error", description: "Session data not available.", variant: "destructive" });
+        return;
+    }
+
+    if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) {
+      return;
+    }
     
     setIsProcessingAdminAction(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
-      // Set sessionEnded to true and ensure round is also marked as inactive
-      await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
-      toast({ title: "Session Ended", description: "The session has been closed. Redirecting..." });
+      await updateDoc(sessionDocRef, { 
+        sessionEnded: true, 
+        isRoundActive: false // Also ensure the round is explicitly stopped
+      });
+      
+      toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
+      
       if (router && typeof router.push === 'function') {
-        router.push('/'); 
+        router.push('/');
+      } else {
+        console.error("Router not available for admin redirection after ending session.");
+        // If redirection fails, we should ideally reset isProcessingAdminAction,
+        // but the session is ended, so the button should disappear anyway.
       }
     } catch (error) {
-      console.error("Error ending session: ", error);
-      toast({ title: "Error", description: "Could not end session. Please try again.", variant: "destructive" });
-      setIsProcessingAdminAction(false);
+      let errorMessage = "Could not end session. Please try again.";
+      if (error instanceof FirebaseError) {
+          errorMessage = `Could not end session: ${error.message} (Code: ${error.code})`;
+      } else if (error instanceof Error) {
+          errorMessage = `Could not end session: ${error.message}`;
+      }
+      console.error("Error ending session details: ", error);
+      toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
+      setIsProcessingAdminAction(false); 
     }
-    // Admin is redirected, so no need to set isProcessingAdminAction back to false here if successful
   };
 
   const copySessionCode = () => {
+    if (!sessionId) return;
     navigator.clipboard.writeText(sessionId)
       .then(() => toast({ title: "Session Code Copied!", description: sessionId }))
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
-  if (isLoading && !error && !sessionData) { 
+  if (isLoading) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <Skeleton className="h-10 w-64 mb-4" />
@@ -163,7 +193,9 @@ export default function SessionPage() {
     );
   }
 
-  if (error) { // Handles "session ended" or "cannot be found"
+  if (error && (!sessionData || sessionData.sessionEnded || error === "This session cannot be found.")) { 
+    // This condition covers: explicit "session ended" error, or general error when sessionData is null (e.g. not found),
+    // or if sessionData exists but sessionEnded is true.
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
@@ -177,9 +209,10 @@ export default function SessionPage() {
   }
 
   if (!sessionData) { 
+    // Fallback if still loading or truly no data without a specific "not found" or "ended" error
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <p className="text-lg text-muted-foreground">Session data is not available. This usually means it's still loading or an issue occurred.</p>
+        <p className="text-lg text-muted-foreground">Session data is currently unavailable.</p>
         <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
             <Home className="mr-2" /> Go to Homepage
         </Button>
@@ -187,22 +220,6 @@ export default function SessionPage() {
     );
   }
   
-  // If sessionData exists, but sessionEnded is true, non-admins will have error set above.
-  // Admin would have been redirected. This is a fallback.
-  if (sessionData.sessionEnded && !isCurrentUserAdmin) {
-     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
-        <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
-        <h1 className="text-2xl font-bold text-destructive mb-2">Session Status</h1>
-        <p className="text-muted-foreground mb-6">This session has ended.</p>
-         <Button onClick={() => router.push('/')} variant="outline">
-            <Home className="mr-2" /> Go to Homepage
-        </Button>
-      </main>
-    );
-  }
-
-
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-6 sm:p-12 md:p-16 bg-background space-y-8">
       <div className="text-center">
@@ -225,7 +242,8 @@ export default function SessionPage() {
         <GoodBadButtonsLoader sessionId={sessionId} isRoundActive={sessionData.isRoundActive && !sessionData.sessionEnded} />
       </div>
 
-      {isCurrentUserAdmin && !sessionData.sessionEnded && (
+      {/* Admin Controls: Visible if user is admin AND sessionData exists AND session is NOT ended */}
+      {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
         <Card className="w-full max-w-md shadow-lg mt-12">
           <CardHeader>
             <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
@@ -249,7 +267,9 @@ export default function SessionPage() {
           </CardContent>
         </Card>
       )}
-       {isCurrentUserAdmin && sessionData.sessionEnded && (
+
+      {/* Message for Admin if session HAS ended (button to go home) */}
+       {isCurrentUserAdmin && sessionData && sessionData.sessionEnded && (
          <Card className="w-full max-w-md shadow-lg mt-12">
           <CardHeader>
             <CardTitle className="text-center text-xl font-bold flex items-center justify-center">
@@ -257,12 +277,14 @@ export default function SessionPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center">
-            <p className="text-muted-foreground mb-4">This session has been ended. You have been redirected to the homepage.</p>
+            <p className="text-muted-foreground mb-4">This session has been ended by an admin.</p>
              <Button onClick={() => router.push('/')} variant="outline"> Go to Homepage </Button>
           </CardContent>
          </Card>
        )}
-       {!isCurrentUserAdmin && !error && ( // Show leave session button if not admin and no error (meaning session is active)
+
+       {/* Leave Session button for non-admins if session is active (no error and session not ended) */}
+       {!isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && !error && (
          <Button onClick={() => router.push('/')} variant="outline" className="mt-12">
             <Home className="mr-2" /> Leave Session
         </Button>
