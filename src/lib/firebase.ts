@@ -29,13 +29,13 @@ if (FIREBASE_API_KEY === "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM" || FIREBASE_A
 }
 
 const firebaseConfig = {
-  apiKey: FIREBASE_API_KEY,
+  apiKey: FIREBASE_API_KEY, // Uses the constant defined above
   authDomain: "leaderboard-db5ff.firebaseapp.com",
   projectId: "leaderboard-db5ff",
-  storageBucket: "leaderboard-db5ff.appspot.com", // Corrected from firebasestorage.app
+  storageBucket: "leaderboard-db5ff.firebasestorage.app", // Updated to user's latest value
   messagingSenderId: "525185216052",
-  appId: "1:525185216052:web:0f47943fdac6b48820e461",
-  measurementId: "G-G8W7K7FEQZ"
+  appId: "1:525185216052:web:25c740835b773d0920e461", // Updated to user's latest value
+  measurementId: "G-F5L13SZJKP" // Updated to user's latest value
 };
 
 // Initialize Firebase
@@ -62,13 +62,12 @@ try {
         })
         .catch((error) => {
           console.error("Error during anonymous sign-in (expected if API key is placeholder/incorrect or Auth is not fully set up): ", error.message);
-          // Potentially alert user here too if critical, but the main config alert should suffice
         });
     }
   });
 
 } catch (error) {
-  const criticalInitError = "CRITICAL FIREBASE INITIALIZATION ERROR (during getFirestore/getAuth): " + error.message + 
+  const criticalInitError = "CRITICAL FIREBASE INITIALIZATION ERROR (during getFirestore/getAuth): " + (error instanceof Error ? error.message : String(error)) +
   "\nThis is very likely due to an incorrect Firebase configuration (API key '" + FIREBASE_API_KEY + "' might be a placeholder or invalid for this project) " +
   "or the Firebase services (Firestore, Auth) not being properly enabled for your project in the Firebase console. " +
   "Please verify your client-side API key in src/lib/firebase.ts and your project settings.";
