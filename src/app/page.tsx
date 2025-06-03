@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowRight, PlusCircle } from 'lucide-react';
-// Removed dynamic import of GoodBadButtonsLoader as it's not used on this page directly anymore
 
 export default function HomePage() {
   const router = useRouter();
@@ -20,17 +19,12 @@ export default function HomePage() {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  // We will use auth.currentUser directly, no need for a separate currentUser state here for now
-  // as onAuthStateChanged updates the global auth.currentUser. We just need to react to it.
 
   useEffect(() => {
-    // This listener ensures our component re-renders when auth state changes,
-    // allowing the button's disabled/text state to update based on auth.currentUser.
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsAuthLoading(false); // Signifies that the initial auth state check has completed.
-                               // auth.currentUser will be null or a user object.
+      setIsAuthLoading(false);
     });
-    return () => unsubscribe(); // Cleanup subscription on unmount
+    return () => unsubscribe();
   }, []);
 
   const generateSessionCode = () => {
@@ -39,8 +33,6 @@ export default function HomePage() {
 
   const handleCreateSession = async () => {
     setIsCreating(true);
-    // The button's disabled state should prevent this function from being called prematurely.
-    // However, this check is a safeguard.
     if (!auth.currentUser) {
       toast({ title: "Authentication Error", description: "Please wait for authentication to complete and try again.", variant: "destructive" });
       setIsCreating(false);
@@ -52,10 +44,11 @@ export default function HomePage() {
       const sessionRef = doc(db, 'sessions', newSessionId);
       await setDoc(sessionRef, {
         adminUid: auth.currentUser.uid,
-        isRoundActive: true, // New sessions start with an active round
+        isRoundActive: true,
         likeClicks: 0,
         dislikeClicks: 0,
         createdAt: new Date(),
+        sessionEnded: false, // Initialize sessionEnded flag
       });
       toast({ title: "Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
@@ -64,7 +57,6 @@ export default function HomePage() {
       toast({ title: "Error", description: "Could not create session. Please try again.", variant: "destructive" });
       setIsCreating(false);
     }
-    // No setIsCreating(false) here if navigation occurs.
   };
 
   const handleJoinSession = async () => {
@@ -77,7 +69,11 @@ export default function HomePage() {
       const sessionRef = doc(db, 'sessions', joinCode);
       const sessionSnap = await getDoc(sessionRef);
       if (sessionSnap.exists()) {
-        router.push(`/session/${joinCode}`);
+        if (sessionSnap.data()?.sessionEnded) {
+          toast({ title: "Session Ended", description: "This session has already ended.", variant: "default" });
+        } else {
+          router.push(`/session/${joinCode}`);
+        }
       } else {
         toast({ title: "Session Not Found", description: "Invalid session code. Please check and try again.", variant: "destructive" });
       }
@@ -113,9 +109,9 @@ export default function HomePage() {
             <CardDescription>Start a new voting session and invite others.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button 
-              onClick={handleCreateSession} 
-              className="w-full text-lg py-6" 
+            <Button
+              onClick={handleCreateSession}
+              className="w-full text-lg py-6"
               disabled={createButtonDisabled}
             >
               {createButtonText()}
@@ -137,9 +133,9 @@ export default function HomePage() {
               className="text-center text-lg h-12"
               maxLength={6}
             />
-            <Button 
-              onClick={handleJoinSession} 
-              className="w-full text-lg py-6" 
+            <Button
+              onClick={handleJoinSession}
+              className="w-full text-lg py-6"
               disabled={isJoining || joinCode.length !== 6}
             >
               {isJoining ? 'Joining...' : 'Join Session'}

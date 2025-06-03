@@ -1,0 +1,80 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /sessions/{sessionId} {
+      // Helper functions to improve readability and maintainability
+      function userIsAdmin() {
+        return request.auth.uid == resource.data.adminUid;
+      }
+
+      function isVoteAction() {
+        return (request.resource.data.likeClicks == resource.data.likeClicks + 1 && request.resource.data.dislikeClicks == resource.data.dislikeClicks) ||
+               (request.resource.data.dislikeClicks == resource.data.dislikeClicks + 1 && request.resource.data.likeClicks == resource.data.likeClicks);
+      }
+
+      // Ensure core immutable fields are not changed during an update
+      function coreFieldsUnchanged() {
+        return request.resource.data.adminUid == resource.data.adminUid &&
+               request.resource.data.createdAt.toMillis() == resource.data.createdAt.toMillis(); 
+               // Compare timestamp millis as direct object comparison might fail
+      }
+      
+      // Ensure vote counts are not tampered with during non-voting admin actions
+      function voteFieldsUnchanged() {
+        return request.resource.data.likeClicks == resource.data.likeClicks &&
+               request.resource.data.dislikeClicks == resource.data.dislikeClicks;
+      }
+
+      // Ensure status fields (round active, session ended) are not tampered with during score resets or voting
+      function statusFieldsUnchanged() {
+        return request.resource.data.isRoundActive == resource.data.isRoundActive &&
+               request.resource.data.sessionEnded == resource.data.sessionEnded;
+      }
+
+      allow read: if request.auth != null;
+      
+      allow create: if request.auth != null && 
+                       request.resource.data.adminUid == request.auth.uid &&
+                       request.resource.data.likeClicks == 0 &&
+                       request.resource.data.dislikeClicks == 0 &&
+                       request.resource.data.isRoundActive == true &&
+                       request.resource.data.sessionEnded == false &&
+                       request.resource.data.createdAt != null; // Ensure createdAt is part of the creation
+
+      allow update: if request.auth != null && coreFieldsUnchanged() && (
+                      // Admin actions:
+                      (userIsAdmin() && (
+                        // 1. Toggle round status (only isRoundActive changes; votes and sessionEnded same)
+                        (request.resource.data.isRoundActive != resource.data.isRoundActive && 
+                         voteFieldsUnchanged() && 
+                         request.resource.data.sessionEnded == resource.data.sessionEnded
+                        ) ||
+                        // 2. Clear scores (only votes change to 0; round status and sessionEnded same)
+                        (request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && 
+                         request.resource.data.isRoundActive == resource.data.isRoundActive && // isRoundActive can be true or false during score clear
+                         request.resource.data.sessionEnded == resource.data.sessionEnded // sessionEnded must remain false
+                        ) ||
+                        // 3. End session (sessionEnded becomes true, isRoundActive becomes false; votes same)
+                        (request.resource.data.sessionEnded == true && resource.data.sessionEnded == false && 
+                         request.resource.data.isRoundActive == false && // Ensure round becomes inactive
+                         voteFieldsUnchanged()
+                        )
+                       )
+                      ) ||
+                      // Player voting updates:
+                      (
+                        resource.data.isRoundActive == true &&    // Round must be active
+                        resource.data.sessionEnded == false &&   // Session must not be ended
+                        isVoteAction() &&                        // Is a valid like or dislike increment
+                        // Ensure player cannot change other critical fields
+                        request.resource.data.isRoundActive == resource.data.isRoundActive && 
+                        request.resource.data.sessionEnded == resource.data.sessionEnded
+                      )
+                    );
+      // No delete rule, as sessions are marked 'sessionEnded' instead of being deleted.
+      // allow delete: if request.auth != null && userIsAdmin(); 
+    }
+  }
+}
