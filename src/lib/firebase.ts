@@ -3,39 +3,18 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
-// !!! IMPORTANT: THE API KEY SHOWN IN THE FIREBASE CONSOLE SCREENSHOT
-// ("AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM") IS A NON-FUNCTIONAL PLACEHOLDER.
-// Firebase services WILL NOT WORK with this key.
-// You MUST obtain a REAL API key for your project from the web app settings in the Firebase Console.
-// The Service Account JSON (with a "private_key") is for SERVER-SIDE use, NOT for this client-side apiKey.
-const FIREBASE_API_KEY = "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM"; // <-- THIS IS THE PROBLEMATIC PLACEHOLDER.
-
-if (FIREBASE_API_KEY === "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM" || FIREBASE_API_KEY.includes("YOUR_API_KEY_PLACEHOLDER_TEXT")) {
-  const errorMessage =
-    "CRITICAL FIREBASE CONFIGURATION ERROR: The API key in src/lib/firebase.ts " +
-    "is a known placeholder ('AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM'). " +
-    "This key WILL NOT WORK for your client-side application. Firebase services (Auth, Firestore, etc.) will fail to initialize. " +
-    "\n\nIMPORTANT: You MUST replace this placeholder with your actual Firebase project's CLIENT-SIDE API key. " +
-    "You can find this key in the Firebase console under Project settings > General > Your apps > (select your web app) > SDK setup and configuration. " +
-    "\n\nThe JSON data you might have that includes a `private_key` (a service account key) is for SERVER-SIDE use with the Firebase Admin SDK and should NEVER be exposed in client-side code. It is NOT a replacement for the client-side apiKey needed here." +
-    "\n\nIf your Firebase console is genuinely showing this placeholder as your project's client-side apiKey, " +
-    "this is an anomalous situation; please try creating a new web app configuration in your Firebase project or contact Firebase support.";
-  console.error(errorMessage);
-  // Show an alert in the browser to make this unmissable during development
-  if (typeof window !== 'undefined') {
-    alert(errorMessage);
-  }
-  // Note: Firebase functionality will be broken beyond this point.
-}
-
+// IMPORTANT: REPLACE THE PLACEHOLDER VALUES BELOW WITH THE ACTUAL CONFIGURATION
+// VALUES FROM YOUR *NEW* FIREBASE PROJECT.
+// You can find these in the Firebase console:
+// Project settings > General > Your apps > (select your web app) > SDK setup and configuration.
 const firebaseConfig = {
-  apiKey: FIREBASE_API_KEY, // Uses the problematic placeholder constant defined above
-  authDomain: "leaderboard-db5ff.firebaseapp.com",
-  projectId: "leaderboard-db5ff",
-  storageBucket: "leaderboard-db5ff.firebasestorage.app",
-  messagingSenderId: "525185216052",
-  appId: "1:525185216052:web:25c740835b773d0920e461",
-  measurementId: "G-F5L13SZJKP"
+  apiKey: "YOUR_API_KEY_HERE",
+  authDomain: "YOUR_AUTH_DOMAIN_HERE",
+  projectId: "YOUR_PROJECT_ID_HERE",
+  storageBucket: "YOUR_STORAGE_BUCKET_HERE",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID_HERE",
+  appId: "YOUR_APP_ID_HERE",
+  measurementId: "YOUR_MEASUREMENT_ID_HERE" // Optional, but usually provided
 };
 
 // Initialize Firebase
@@ -58,22 +37,24 @@ try {
     if (!user) {
       signInAnonymously(auth)
         .then(() => {
-          console.log("Attempted anonymous sign-in. This will likely fail if the API key is a placeholder or incorrect.");
+          console.log("Anonymous sign-in successful or user already signed in.");
         })
         .catch((error) => {
-          console.error("Error during anonymous sign-in (expected if API key is placeholder/incorrect or Auth is not fully set up): ", error.message);
+          console.error("Error during anonymous sign-in: ", error.message);
+          // This error is expected if Firebase config is still placeholder or incorrect
+          if (firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
+            console.warn("Firebase configuration appears to be using placeholder values. Anonymous sign-in will fail until these are updated with your actual project configuration from the Firebase console.");
+          }
         });
     }
   });
 
 } catch (error) {
-  const criticalInitError = "CRITICAL FIREBASE INITIALIZATION ERROR (during getFirestore/getAuth): " + (error instanceof Error ? error.message : String(error)) +
-  "\nThis is very likely due to an incorrect Firebase configuration (API key '" + FIREBASE_API_KEY + "' might be a placeholder or invalid for this project) " +
-  "or the Firebase services (Firestore, Auth) not being properly enabled for your project in the Firebase console. " +
-  "Please verify your client-side API key in src/lib/firebase.ts and your project settings.";
-  console.error(criticalInitError);
-  if (typeof window !== 'undefined') {
-    alert(criticalInitError);
+  console.error("CRITICAL FIREBASE INITIALIZATION ERROR (during getFirestore/getAuth): ", (error instanceof Error ? error.message : String(error)));
+  if (firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
+    alert("CRITICAL FIREBASE CONFIGURATION ERROR: The Firebase configuration in src/lib/firebase.ts is using placeholder values. Please replace them with the actual values from your Firebase project console.");
+  } else {
+    alert("CRITICAL FIREBASE INITIALIZATION ERROR. Check console for details. This might be due to incorrect Firebase config values or services not being properly enabled in the Firebase console.");
   }
 }
 
