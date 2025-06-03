@@ -1,15 +1,17 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase'; // auth is imported
+import { onAuthStateChanged } from 'firebase/auth'; // Import onAuthStateChanged
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowRight, PlusCircle } from 'lucide-react';
+import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 
 export default function HomePage() {
   const router = useRouter();
@@ -17,6 +19,14 @@ export default function HomePage() {
   const [joinCode, setJoinCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsAuthLoading(false); // Auth state is now determined (user might be null or an object)
+    });
+    return () => unsubscribe(); // Cleanup subscription on unmount
+  }, []);
 
   const generateSessionCode = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -24,6 +34,11 @@ export default function HomePage() {
 
   const handleCreateSession = async () => {
     setIsCreating(true);
+    if (isAuthLoading) { // Should ideally be caught by disabled button state
+        toast({ title: "Authentication Pending", description: "Please wait for authentication to complete.", variant: "default" });
+        setIsCreating(false);
+        return;
+    }
     if (!auth.currentUser) {
       toast({ title: "Authentication Error", description: "Please wait for authentication to complete and try again.", variant: "destructive" });
       setIsCreating(false);
@@ -47,6 +62,7 @@ export default function HomePage() {
       toast({ title: "Error", description: "Could not create session. Please try again.", variant: "destructive" });
       setIsCreating(false);
     }
+    // No setIsCreating(false) here, as navigation should occur. If error, it's set above.
   };
 
   const handleJoinSession = async () => {
@@ -88,8 +104,12 @@ export default function HomePage() {
             <CardDescription>Start a new voting session and invite others.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={handleCreateSession} className="w-full text-lg py-6" disabled={isCreating}>
-              {isCreating ? 'Creating...' : 'Create Session'}
+            <Button 
+              onClick={handleCreateSession} 
+              className="w-full text-lg py-6" 
+              disabled={isCreating || isAuthLoading}
+            >
+              {isAuthLoading ? 'Authenticating...' : (isCreating ? 'Creating...' : 'Create Session')}
             </Button>
           </CardContent>
         </Card>
@@ -108,7 +128,11 @@ export default function HomePage() {
               className="text-center text-lg h-12"
               maxLength={6}
             />
-            <Button onClick={handleJoinSession} className="w-full text-lg py-6" disabled={isJoining || joinCode.length !== 6}>
+            <Button 
+              onClick={handleJoinSession} 
+              className="w-full text-lg py-6" 
+              disabled={isJoining || joinCode.length !== 6}
+            >
               {isJoining ? 'Joining...' : 'Join Session'}
             </Button>
           </CardContent>
