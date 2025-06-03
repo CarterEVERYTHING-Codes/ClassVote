@@ -15,21 +15,36 @@ const GoodBadButtons: React.FC = () => {
   const badSynth = useRef<Tone.Synth | null>(null);
   const [isRoundActive, setIsRoundActive] = useState(true);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
 
   useEffect(() => {
     const gameStatusDocRef = doc(db, 'gameAdmin', 'status');
     const unsubscribe = onSnapshot(gameStatusDocRef, (docSnap) => {
+      let currentRoundIsActive = true; // Default if not exists
       if (docSnap.exists()) {
-        setIsRoundActive(docSnap.data()?.isRoundActive ?? true);
+        currentRoundIsActive = docSnap.data()?.isRoundActive ?? true;
       } else {
         // Initialize if document doesn't exist, default to active
         setDoc(gameStatusDocRef, { isRoundActive: true }, { merge: true });
-        setIsRoundActive(true);
+      }
+      setIsRoundActive(currentRoundIsActive);
+
+      // Manage "voted in current round" status based on round activity
+      if (currentRoundIsActive) {
+        const voted = localStorage.getItem('hasVotedGoodBadSoundGame') === 'true';
+        setHasVotedInCurrentRound(voted);
+      } else {
+        // Round is not active, so clear vote status for the next round
+        localStorage.removeItem('hasVotedGoodBadSoundGame');
+        setHasVotedInCurrentRound(false);
       }
       setIsLoadingStatus(false);
     }, (error) => {
       console.error("Error fetching game status for buttons: ", error);
-      setIsRoundActive(true); // Default to active on error
+      // Fallback behavior on error
+      setIsRoundActive(true); // Default to active
+      const voted = localStorage.getItem('hasVotedGoodBadSoundGame') === 'true';
+      setHasVotedInCurrentRound(voted && true); // Check localStorage but respect default active state
       setIsLoadingStatus(false);
     });
 
@@ -87,10 +102,13 @@ const GoodBadButtons: React.FC = () => {
       await updateDoc(scoresDocRef, {
         [type === 'good' ? 'goodClicks' : 'badClicks']: increment(1)
       });
+      localStorage.setItem('hasVotedGoodBadSoundGame', 'true');
+      setHasVotedInCurrentRound(true);
     } catch (error) {
-        // If the document doesn't exist, create it.
         if ((error as any).code === 'not-found' || (error as any).message?.includes('No document to update')) {
              await setDoc(scoresDocRef, { goodClicks: type === 'good' ? 1:0, badClicks: type === 'bad' ? 1:0 }, {merge: true});
+             localStorage.setItem('hasVotedGoodBadSoundGame', 'true');
+             setHasVotedInCurrentRound(true);
         } else {
             console.error("Error updating score: ", error);
             toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
@@ -99,7 +117,7 @@ const GoodBadButtons: React.FC = () => {
   };
 
   const playGoodSound = async () => {
-    if (!isRoundActive || !await ensureAudioContextStarted()) return;
+    if (!isRoundActive || isLoadingStatus || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
     try {
       goodSynth.current?.triggerAttackRelease("C5", "8n", Tone.now());
       setTimeout(() => goodSynth.current?.triggerAttackRelease("E5", "8n", Tone.now() + 0.1), 50);
@@ -112,7 +130,7 @@ const GoodBadButtons: React.FC = () => {
   };
 
   const playBadSound = async () => {
-    if (!isRoundActive || !await ensureAudioContextStarted()) return;
+    if (!isRoundActive || isLoadingStatus || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
     try {
       badSynth.current?.triggerAttackRelease("C3", "4n", Tone.now());
       setTimeout(() => badSynth.current?.triggerAttackRelease("C#3", "4n", Tone.now() + 0.05), 25);
@@ -124,39 +142,54 @@ const GoodBadButtons: React.FC = () => {
   };
   
   const pulseAnimationClass = "active:scale-95 transform transition-transform duration-150 ease-in-out";
-  const disabledClass = !isRoundActive || isLoadingStatus ? "opacity-50 cursor-not-allowed" : "";
+  const buttonDisabledState = !isRoundActive || isLoadingStatus || hasVotedInCurrentRound;
+  const disabledClass = buttonDisabledState ? "opacity-50 cursor-not-allowed" : "";
 
   if (isLoadingStatus) {
       return (
-        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
-          <Button className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md ${disabledClass}`} disabled>
-            <ThumbsUp className="mr-3 h-6 w-6" /> Loading...
-          </Button>
-          <Button className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md ${disabledClass}`} disabled>
-            <ThumbsDown className="mr-3 h-6 w-6" /> Loading...
-          </Button>
+        <div className="flex flex-col items-center space-y-4">
+          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
+            <Button className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md opacity-50 cursor-not-allowed`} disabled>
+              <ThumbsUp className="mr-3 h-6 w-6" /> Loading...
+            </Button>
+            <Button className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md opacity-50 cursor-not-allowed`} disabled>
+              <ThumbsDown className="mr-3 h-6 w-6" /> Loading...
+            </Button>
+          </div>
         </div>
       );
   }
 
   return (
-    <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
-      <Button
-        onClick={playGoodSound}
-        className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-green-500 hover:bg-green-600 text-white`}
-        aria-label="Play good sound"
-        disabled={!isRoundActive || isLoadingStatus}
-      >
-        <ThumbsUp className="mr-3 h-6 w-6" /> Good
-      </Button>
-      <Button
-        onClick={playBadSound}
-        className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-red-500 hover:bg-red-600 text-white`}
-        aria-label="Play bad sound"
-        disabled={!isRoundActive || isLoadingStatus}
-      >
-        <ThumbsDown className="mr-3 h-6 w-6" /> Bad
-      </Button>
+    <div className="flex flex-col items-center space-y-4">
+      <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
+        <Button
+          onClick={playGoodSound}
+          className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-green-500 hover:bg-green-600 text-white`}
+          aria-label="Play good sound"
+          disabled={buttonDisabledState}
+        >
+          <ThumbsUp className="mr-3 h-6 w-6" /> Good
+        </Button>
+        <Button
+          onClick={playBadSound}
+          className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-red-500 hover:bg-red-600 text-white`}
+          aria-label="Play bad sound"
+          disabled={buttonDisabledState}
+        >
+          <ThumbsDown className="mr-3 h-6 w-6" /> Bad
+        </Button>
+      </div>
+      {hasVotedInCurrentRound && isRoundActive && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          You have already voted in this round.
+        </p>
+      )}
+       {!isRoundActive && !isLoadingStatus && (
+        <p className="mt-2 text-sm font-semibold text-orange-600 dark:text-orange-400">
+          The current round has ended. Please wait for the admin to start a new round.
+        </p>
+      )}
     </div>
   );
 };
