@@ -2,83 +2,74 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { auth, db, googleProvider } from '@/lib/firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { db } from '@/lib/firebase'; // Removed auth, googleProvider
 import { doc, setDoc, onSnapshot, DocumentData } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { LogIn, LogOut, Zap, Play, Pause, RotateCcw } from 'lucide-react';
+import { LogIn, LogOut, Zap, Play, Pause, RotateCcw, ShieldAlert } from 'lucide-react';
 
-// IMPORTANT: Change this to the actual Google email address of your designated admin user.
-// For example, if your admin's email is "carter.admin@example.com", set it to that.
-const ADMIN_EMAIL = "the.admin.user@example.com"; 
+const ADMIN_USERNAME = "Admin123";
+const ADMIN_PASSWORD = "Carter2012";
 
 const AdminPanel: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [isRoundActive, setIsRoundActive] = useState(true);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [loadingInitialData, setLoadingInitialData] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsAdmin(currentUser?.email === ADMIN_EMAIL);
-      setLoadingAuth(false);
-    });
-
+    // Initialize game status and leaderboard scores
     const gameStatusDocRef = doc(db, 'gameAdmin', 'status');
     const unsubscribeStatus = onSnapshot(gameStatusDocRef, (docSnap) => {
       if (docSnap.exists()) {
         setIsRoundActive(docSnap.data()?.isRoundActive ?? true);
       } else {
-        // Initialize if document doesn't exist
         setDoc(gameStatusDocRef, { isRoundActive: true }, { merge: true });
         setIsRoundActive(true);
       }
+      setLoadingInitialData(false);
     }, (error) => {
       console.error("Error fetching game status: ", error);
       setIsRoundActive(true); // Default on error
+      setLoadingInitialData(false);
     });
     
-    // Ensure leaderboard scores document is initialized if it doesn't exist
     const scoresDocRef = doc(db, 'leaderboard', 'scores');
-    onSnapshot(scoresDocRef, (docSnap) => {
+    const unsubscribeScores = onSnapshot(scoresDocRef, (docSnap) => {
       if (!docSnap.exists()) {
         setDoc(scoresDocRef, { goodClicks: 0, badClicks: 0 }, { merge: true });
       }
     });
 
-
     return () => {
-      unsubscribeAuth();
       unsubscribeStatus();
+      unsubscribeScores();
     };
   }, []);
 
-  const handleSignIn = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-      toast({ title: "Signed In", description: "Successfully signed in." });
-    } catch (error) {
-      console.error("Error signing in: ", error);
-      toast({ title: "Sign In Error", description: "Could not sign in.", variant: "destructive" });
+  const handleAdminLogin = () => {
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+      setIsAdminLoggedIn(true);
+      toast({ title: "Admin Login Successful", description: "You are now logged in as admin." });
+      setUsername('');
+      setPassword('');
+    } else {
+      toast({ title: "Admin Login Failed", description: "Invalid username or password.", variant: "destructive" });
     }
   };
 
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      toast({ title: "Signed Out", description: "Successfully signed out." });
-    } catch (error) {
-      console.error("Error signing out: ", error);
-      toast({ title: "Sign Out Error", description: "Could not sign out.", variant: "destructive" });
-    }
+  const handleAdminLogout = () => {
+    setIsAdminLoggedIn(false);
+    toast({ title: "Admin Logged Out", description: "You have successfully logged out." });
   };
 
   const handleClearLeaderboard = async () => {
-    if (!isAdmin) return;
+    if (!isAdminLoggedIn) return;
     try {
       const scoresDocRef = doc(db, 'leaderboard', 'scores');
       await setDoc(scoresDocRef, { goodClicks: 0, badClicks: 0 });
@@ -90,7 +81,7 @@ const AdminPanel: React.FC = () => {
   };
 
   const handleToggleRound = async () => {
-    if (!isAdmin) return;
+    if (!isAdminLoggedIn) return;
     try {
       const gameStatusDocRef = doc(db, 'gameAdmin', 'status');
       await setDoc(gameStatusDocRef, { isRoundActive: !isRoundActive }, { merge: true });
@@ -101,7 +92,7 @@ const AdminPanel: React.FC = () => {
     }
   };
   
-  if (loadingAuth) {
+  if (loadingInitialData) {
     return <div className="text-center p-4">Loading Admin Panel...</div>;
   }
 
@@ -113,32 +104,58 @@ const AdminPanel: React.FC = () => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!user ? (
-          <Button onClick={handleSignIn} className="w-full">
-            <LogIn className="mr-2" /> Sign In with Google
-          </Button>
+        {!isAdminLoggedIn ? (
+          <div className="space-y-4">
+            <div className="flex items-center p-3 rounded-md bg-yellow-100 border border-yellow-300 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
+              <ShieldAlert className="h-5 w-5 mr-2 shrink-0" />
+              <p className="text-xs">
+                <strong>Warning:</strong> This login method is not secure for production use. Credentials are hardcoded.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="username">Username</Label>
+              <Input 
+                id="username" 
+                type="text" 
+                value={username} 
+                onChange={(e) => setUsername(e.target.value)} 
+                placeholder="Admin Username" 
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="password">Password</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                placeholder="Admin Password"
+                className="mt-1"
+              />
+            </div>
+            <Button onClick={handleAdminLogin} className="w-full">
+              <LogIn className="mr-2" /> Admin Login
+            </Button>
+          </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-center text-sm text-muted-foreground">Welcome, {user.displayName || user.email}!</p>
-            {isAdmin && (
-              <div className="space-y-2 pt-2 border-t">
-                <h3 className="text-lg font-semibold text-center mb-2">Admin Actions</h3>
-                <p className="text-sm text-center font-medium">
-                  Round Status: <span className={isRoundActive ? "text-green-500" : "text-red-500"}>{isRoundActive ? 'ACTIVE' : 'STOPPED'}</span>
-                </p>
-                <Button onClick={handleToggleRound} variant="outline" className="w-full">
-                  {isRoundActive ? <Pause className="mr-2" /> : <Play className="mr-2" />}
-                  {isRoundActive ? 'Stop Round' : 'Start Round'}
-                </Button>
-                <Button onClick={handleClearLeaderboard} variant="destructive" className="w-full">
-                  <RotateCcw className="mr-2" /> Clear Leaderboard
-                </Button>
-              </div>
-            )}
-            {!isAdmin && user && <p className="text-center text-red-500 text-sm">You are not authorized as an admin.</p>}
-             <p className="text-xs text-center text-muted-foreground pt-2">Remember to replace the placeholder `ADMIN_EMAIL` in `AdminPanel.tsx` with the actual admin Google email.</p>
-            <Button onClick={handleSignOut} variant="outline" className="w-full">
-              <LogOut className="mr-2" /> Sign Out
+            <p className="text-center text-sm text-green-600 dark:text-green-400 font-semibold">Welcome, Admin!</p>
+            <div className="space-y-2 pt-2 border-t">
+              <h3 className="text-lg font-semibold text-center mb-2">Admin Actions</h3>
+              <p className="text-sm text-center font-medium">
+                Round Status: <span className={isRoundActive ? "text-green-500" : "text-red-500"}>{isRoundActive ? 'ACTIVE' : 'STOPPED'}</span>
+              </p>
+              <Button onClick={handleToggleRound} variant="outline" className="w-full">
+                {isRoundActive ? <Pause className="mr-2" /> : <Play className="mr-2" />}
+                {isRoundActive ? 'Stop Round' : 'Start Round'}
+              </Button>
+              <Button onClick={handleClearLeaderboard} variant="destructive" className="w-full">
+                <RotateCcw className="mr-2" /> Clear Leaderboard
+              </Button>
+            </div>
+            <Button onClick={handleAdminLogout} variant="outline" className="w-full">
+              <LogOut className="mr-2" /> Admin Logout
             </Button>
           </div>
         )}

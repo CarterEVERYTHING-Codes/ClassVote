@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+// import { getAuth, GoogleAuthProvider } from "firebase/auth"; // No longer needed for admin panel
 import { getFirestore } from "firebase/firestore";
 // import { getAnalytics } from "firebase/analytics"; // Only if you need analytics
 
@@ -16,9 +16,17 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+// const auth = getAuth(app); // Auth instance might still be needed if other parts of app use it
 const db = getFirestore(app);
-const googleProvider = new GoogleAuthProvider();
+// const googleProvider = new GoogleAuthProvider(); // No longer needed for admin panel
 // const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null; // Initialize analytics only on client
 
-export { app, auth, db, googleProvider };
+export { app, db }; // Export auth and googleProvider if they are used elsewhere
+// If auth and googleProvider are DEFINITELY not used anywhere else, 
+// you can remove them from export and their imports above.
+// For now, I'm commenting them out from this specific file's needs but leaving a note.
+// If you confirm they aren't used, I can remove them fully.
+// Re-adding auth for now in case it's used elsewhere, but AdminPanel won't use it.
+import { getAuth } from "firebase/auth";
+const auth = getAuth(app);
+export { auth };
