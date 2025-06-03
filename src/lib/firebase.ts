@@ -1,8 +1,7 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-// import { getAuth, GoogleAuthProvider } from "firebase/auth"; // No longer needed for admin panel
 import { getFirestore } from "firebase/firestore";
-// import { getAnalytics } from "firebase/analytics"; // Only if you need analytics
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDNWdhzZ2mfqEvYwu0-A27Tw35OnEaTkzM",
@@ -16,17 +15,21 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-// const auth = getAuth(app); // Auth instance might still be needed if other parts of app use it
 const db = getFirestore(app);
-// const googleProvider = new GoogleAuthProvider(); // No longer needed for admin panel
-// const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null; // Initialize analytics only on client
-
-export { app, db }; // Export auth and googleProvider if they are used elsewhere
-// If auth and googleProvider are DEFINITELY not used anywhere else, 
-// you can remove them from export and their imports above.
-// For now, I'm commenting them out from this specific file's needs but leaving a note.
-// If you confirm they aren't used, I can remove them fully.
-// Re-adding auth for now in case it's used elsewhere, but AdminPanel won't use it.
-import { getAuth } from "firebase/auth";
 const auth = getAuth(app);
-export { auth };
+
+// Attempt anonymous sign-in if no user is signed in
+onAuthStateChanged(auth, (user) => {
+  if (!user) {
+    signInAnonymously(auth)
+      .then(() => {
+        console.log("Signed in anonymously");
+      })
+      .catch((error) => {
+        console.error("Error signing in anonymously: ", error);
+        // You might want to inform the user or handle this more gracefully
+      });
+  }
+});
+
+export { app, db, auth };
