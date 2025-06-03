@@ -10,7 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, LogOut, Zap, Play, Pause, RotateCcw } from 'lucide-react';
 
-const ADMIN_EMAIL = "your-admin-email@example.com"; // IMPORTANT: Change this to your admin email
+// IMPORTANT: Change this to the actual Google email address of your designated admin user.
+// For example, if your admin's email is "carter.admin@example.com", set it to that.
+const ADMIN_EMAIL = "the.admin.user@example.com"; 
 
 const AdminPanel: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -133,8 +135,8 @@ const AdminPanel: React.FC = () => {
                 </Button>
               </div>
             )}
-            {!isAdmin && <p className="text-center text-red-500 text-sm">You are not authorized as an admin.</p>}
-             <p className="text-xs text-center text-muted-foreground pt-2">Remember to replace `your-admin-email@example.com` in `AdminPanel.tsx` with your actual admin email.</p>
+            {!isAdmin && user && <p className="text-center text-red-500 text-sm">You are not authorized as an admin.</p>}
+             <p className="text-xs text-center text-muted-foreground pt-2">Remember to replace the placeholder `ADMIN_EMAIL` in `AdminPanel.tsx` with the actual admin Google email.</p>
             <Button onClick={handleSignOut} variant="outline" className="w-full">
               <LogOut className="mr-2" /> Sign Out
             </Button>
