@@ -1,4 +1,5 @@
-import GoodBadButtons from '@/components/good-bad-buttons';
+
+import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 
 export default function Home() {
   return (
@@ -11,7 +12,7 @@ export default function Home() {
           Press a button to hear a sound!
         </p>
       </div>
-      <GoodBadButtons />
+      <GoodBadButtonsLoader />
     </main>
   );
 }
