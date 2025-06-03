@@ -5,8 +5,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { doc, onSnapshot, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader'; // Will be adapted to pass sessionId
-import Leaderboard from '@/components/leaderboard'; // Will be adapted to use sessionId
+import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
+import Leaderboard from '@/components/leaderboard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -33,10 +33,14 @@ export default function SessionPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+        setIsLoading(false);
+        setError("No session ID provided.");
+        return;
+    }
 
     const sessionDocRef = doc(db, 'sessions', sessionId);
-    const unsubscribe = onSnapshot(sessionDocRef, (docSnap) => {
+    const unsubscribeFirestore = onSnapshot(sessionDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
@@ -46,9 +50,15 @@ export default function SessionPage() {
         setError(null);
       } else {
         setSessionData(null);
+        setIsCurrentUserAdmin(false);
         setError("Session not found or has been ended. You will be redirected.");
         toast({ title: "Session Ended", description: "This session no longer exists.", variant: "destructive" });
-        setTimeout(() => router.push('/'), 3000);
+        setTimeout(() => {
+            // Check if router is available and then push
+            if (router && typeof router.push === 'function') {
+                router.push('/');
+            }
+        }, 3000);
       }
       setIsLoading(false);
     }, (err) => {
@@ -58,20 +68,21 @@ export default function SessionPage() {
       setIsLoading(false);
     });
 
-    // Check for auth state changes for admin status
-    const authUnsubscribe = auth.onAuthStateChanged(user => {
-      if (user && sessionData) {
+    const unsubscribeAuth = auth.onAuthStateChanged(user => {
+      if (user && sessionData) { // sessionData here is the state variable
         setIsCurrentUserAdmin(user.uid === sessionData.adminUid);
-      } else {
+      } else if (!user) { // User logged out
         setIsCurrentUserAdmin(false);
       }
+      // If user is present but sessionData is null (e.g. after deletion or initial load),
+      // the Firestore listener will correctly set/unset admin status.
     });
 
     return () => {
-      unsubscribe();
-      authUnsubscribe();
+      unsubscribeFirestore();
+      unsubscribeAuth();
     };
-  }, [sessionId, router, toast, sessionData]); // Added sessionData to re-check admin on data load
+  }, [sessionId, router, toast, sessionData]); // sessionData is included to re-evaluate admin status if it changes.
 
 
   const handleToggleRound = async () => {
@@ -79,7 +90,6 @@ export default function SessionPage() {
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { isRoundActive: !sessionData.isRoundActive });
-      // Reset local storage for all users when round toggles (new round starts or old one stops)
       localStorage.removeItem(`hasVoted_${sessionId}`);
       toast({ title: "Round Status Updated", description: `Round is now ${!sessionData.isRoundActive ? 'active' : 'stopped'}. Player votes reset.` });
     } catch (error) {
@@ -93,7 +103,7 @@ export default function SessionPage() {
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { likeClicks: 0, dislikeClicks: 0 });
-      localStorage.removeItem(`hasVoted_${sessionId}`); // Also reset votes
+      localStorage.removeItem(`hasVoted_${sessionId}`);
       toast({ title: "Scores Cleared", description: "Session scores have been reset. Player votes reset." });
     } catch (error) {
       console.error("Error clearing scores: ", error);
@@ -104,15 +114,22 @@ export default function SessionPage() {
   const handleEndSession = async () => {
     if (!isCurrentUserAdmin) return;
     if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) return;
+    
+    setIsLoading(true); // Indicate an operation is in progress
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await deleteDoc(sessionDocRef);
-      toast({ title: "Session Ended", description: "The session has been closed." });
-      // router.push('/'); // Will redirect via snapshot listener
+      toast({ title: "Session Ended", description: "The session has been closed. Redirecting..." });
+      // Admin is redirected immediately. Other users will be redirected by their onSnapshot listener.
+      if (router && typeof router.push === 'function') {
+        router.push('/');
+      }
     } catch (error) {
       console.error("Error ending session: ", error);
-      toast({ title: "Error", description: "Could not end session.", variant: "destructive" });
+      toast({ title: "Error", description: "Could not end session. Please try again.", variant: "destructive" });
+      setIsLoading(false); // Reset loading state on error
     }
+    // No need to set isLoading to false on success if navigating away.
   };
 
   const copySessionCode = () => {
@@ -121,7 +138,7 @@ export default function SessionPage() {
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
-  if (isLoading) {
+  if (isLoading && !error && !sessionData) { // More specific loading state check
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <Skeleton className="h-10 w-64 mb-4" />
@@ -149,14 +166,28 @@ export default function SessionPage() {
     );
   }
 
-  if (!sessionData) {
-     // Should be covered by error state, but as a fallback
+  if (!sessionData && !isLoading) { // If not loading and no session data (and no error that already rendered)
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <p>Session data not available.</p>
+        <p className="text-lg text-muted-foreground">Session data not available or session has ended.</p>
+        <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
+            <Home className="mr-2" /> Go to Homepage
+        </Button>
       </main>
     );
   }
+  
+  // Ensure sessionData is not null before trying to access its properties
+  if (!sessionData) {
+    // This case should ideally be covered by isLoading or error states,
+    // but it's a safeguard.
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-6">
+          <p>Loading session information...</p>
+      </main>
+    );
+  }
+
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-6 sm:p-12 md:p-16 bg-background space-y-8">
@@ -191,14 +222,14 @@ export default function SessionPage() {
              <p className="text-sm text-center font-medium">
                 Round Status: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>{sessionData.isRoundActive ? 'ACTIVE' : 'STOPPED'}</span>
               </p>
-            <Button onClick={handleToggleRound} variant="outline" className="w-full">
+            <Button onClick={handleToggleRound} variant="outline" className="w-full" disabled={isLoading}>
               {sessionData.isRoundActive ? <Pause className="mr-2" /> : <Play className="mr-2" />}
               {sessionData.isRoundActive ? 'Stop Round' : 'Start Round & Reset Votes'}
             </Button>
-            <Button onClick={handleClearScores} variant="outline" className="w-full">
+            <Button onClick={handleClearScores} variant="outline" className="w-full" disabled={isLoading}>
               <RotateCcw className="mr-2" /> Clear Scores & Reset Votes
             </Button>
-            <Button onClick={handleEndSession} variant="destructive" className="w-full">
+            <Button onClick={handleEndSession} variant="destructive" className="w-full" disabled={isLoading}>
               <Trash2 className="mr-2" /> End Session
             </Button>
             <Button onClick={() => router.push('/')} variant="outline" className="w-full mt-4">
@@ -207,7 +238,7 @@ export default function SessionPage() {
           </CardContent>
         </Card>
       )}
-       {!isCurrentUserAdmin && (
+       {!isCurrentUserAdmin && sessionData && ( // Ensure sessionData exists before showing leave button
          <Button onClick={() => router.push('/')} variant="outline" className="mt-12">
             <Home className="mr-2" /> Leave Session
         </Button>
