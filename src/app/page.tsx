@@ -95,7 +95,7 @@ export default function HomePage() {
     <main className="flex min-h-screen flex-col items-center justify-center p-6 sm:p-12 md:p-16 bg-background space-y-8">
       <div className="text-center mb-8">
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline font-bold text-foreground mb-3 sm:mb-4">
-          Sound Vote Sessions
+          ClassVote
         </h1>
         <p className="text-lg sm:text-xl text-muted-foreground">
           Create or join a session to vote on sounds with others!

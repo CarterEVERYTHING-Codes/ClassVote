@@ -1,6 +1,7 @@
-# Sound Vote Sessions
 
-Sound Vote Sessions is a real-time, interactive web application where users can create or join voting sessions to collectively decide on sounds. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the voting rounds and end sessions.
+# ClassVote
+
+ClassVote is a real-time, interactive web application where users can create or join voting sessions to collectively decide on sounds. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the voting rounds and end sessions.
 
 ## Tech Stack
 
@@ -14,8 +15,9 @@ Sound Vote Sessions is a real-time, interactive web application where users can 
 1.  **Clone the Repository:**
     ```bash
     git clone <your-repository-url>
-    cd <repository-name>
+    cd <repository-name> 
     ```
+    (Replace `<repository-name>` with the actual name of your repository folder, e.g., `classvote`)
 
 2.  **Install Dependencies:**
     ```bash
@@ -105,3 +107,4 @@ Sound Vote Sessions is a real-time, interactive web application where users can 
 *   Admin controls to start/stop rounds, clear scores, and end sessions.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Anonymous user authentication via Firebase.
+
