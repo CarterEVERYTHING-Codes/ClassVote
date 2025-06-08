@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
@@ -11,10 +10,11 @@ import { doc, updateDoc, increment, getDoc, FirebaseError } from "firebase/fires
 
 interface GoodBadButtonsProps {
   sessionId: string;
-  isRoundActive: boolean; // Changed from isRoundActiveInitially
+  isRoundActive: boolean;
+  soundsEnabled: boolean; // New prop
 }
 
-const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp }) => { // Renamed prop for clarity
+const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp, soundsEnabled }) => {
   const { toast } = useToast();
   const likeSynth = useRef<Tone.Synth | null>(null);
   const dislikeSynth = useRef<Tone.Synth | null>(null);
@@ -30,7 +30,6 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       const voted = localStorage.getItem(localStorageKey) === 'true';
       setHasVotedInCurrentRound(voted);
     } else {
-      // If round is not active from prop, ensure vote status is reset
       localStorage.removeItem(localStorageKey);
       setHasVotedInCurrentRound(false);
     }
@@ -88,7 +87,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
     try {
       const currentSessionDoc = await getDoc(sessionDocRef);
       if (!currentSessionDoc.exists() || !currentSessionDoc.data()?.isRoundActive) {
-        toast({ title: "Vote Not Counted", description: "The round may have just ended or the session is closed.", variant: "default" });
+        toast({ title: "Vote Not Counted", description: "The feedback round may have just closed or the session has ended.", variant: "default" });
         setInternalIsRoundActive(false); 
         localStorage.removeItem(localStorageKey);
         setHasVotedInCurrentRound(false);
@@ -104,7 +103,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
     } catch (error) {
       console.error("Error updating score: ", error);
       if ((error as FirebaseError)?.code === 'permission-denied' || (error as FirebaseError)?.code === 'aborted') {
-           toast({ title: "Vote Not Counted", description: "The round may have just ended.", variant: "default" });
+           toast({ title: "Vote Not Counted", description: "The feedback round may have just closed.", variant: "default" });
       } else {
           toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
       }
@@ -126,13 +125,14 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   };
 
   const playLikeSound = async () => {
-    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
+    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound) return;
+    if (soundsEnabled && !await ensureAudioContextStarted()) return;
     
     setIsLoadingClick(true); 
     const scoreUpdated = await updateScore('like');
     setIsLoadingClick(false);
 
-    if (scoreUpdated) {
+    if (scoreUpdated && soundsEnabled) {
       likeSynth.current?.triggerAttackRelease("C5", "8n", Tone.now());
       setTimeout(() => likeSynth.current?.triggerAttackRelease("E5", "8n", Tone.now() + 0.1), 50);
       setTimeout(() => likeSynth.current?.triggerAttackRelease("G5", "8n", Tone.now() + 0.2), 100);
@@ -140,13 +140,14 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   };
 
   const playDislikeSound = async () => {
-    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound || !await ensureAudioContextStarted()) return;
+    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound) return;
+    if (soundsEnabled && !await ensureAudioContextStarted()) return;
 
     setIsLoadingClick(true); 
     const scoreUpdated = await updateScore('dislike');
     setIsLoadingClick(false);
 
-    if (scoreUpdated) {
+    if (scoreUpdated && soundsEnabled) {
       dislikeSynth.current?.triggerAttackRelease("C3", "4n", Tone.now());
       setTimeout(() => dislikeSynth.current?.triggerAttackRelease("C#3", "4n", Tone.now() + 0.05), 25);
     }
@@ -155,6 +156,16 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   const pulseAnimationClass = "active:scale-95 transform transition-transform duration-150 ease-in-out";
   const buttonDisabledState = !internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound;
   const disabledClass = buttonDisabledState ? "opacity-50 cursor-not-allowed" : "";
+
+  let statusMessage = "";
+  if (hasVotedInCurrentRound && internalIsRoundActive) {
+    statusMessage = "You have already voted in this feedback round.";
+  } else if (!internalIsRoundActive) {
+    statusMessage = "The feedback round is currently CLOSED. Please wait for the admin to open it.";
+  } else if (internalIsRoundActive) {
+    statusMessage = "The feedback round is OPEN. Cast your vote!";
+  }
+
 
   if (isLoadingClick && !buttonDisabledState) { 
       return (
@@ -167,6 +178,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
               <ThumbsDown className="mr-3 h-6 w-6" /> Processing...
             </Button>
           </div>
+           <p className="mt-2 text-sm text-muted-foreground">{statusMessage}</p>
         </div>
       );
   }
@@ -178,7 +190,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
         <Button
           onClick={playLikeSound}
           className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-green-500 hover:bg-green-600 text-white`}
-          aria-label="Play like sound"
+          aria-label="Vote Like"
           disabled={buttonDisabledState}
         >
           <ThumbsUp className="mr-3 h-6 w-6" /> Like
@@ -186,26 +198,17 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
         <Button
           onClick={playDislikeSound}
           className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-red-500 hover:bg-red-600 text-white`}
-          aria-label="Play dislike sound"
+          aria-label="Vote Dislike"
           disabled={buttonDisabledState}
         >
           <ThumbsDown className="mr-3 h-6 w-6" /> Dislike
         </Button>
       </div>
-      {hasVotedInCurrentRound && internalIsRoundActive && (
-        <p className="mt-2 text-sm text-muted-foreground">
-          You have already voted in this round.
-        </p>
-      )}
-       {!internalIsRoundActive && (
-        <p className="mt-2 text-sm font-semibold text-orange-600 dark:text-orange-400">
-          The current round has ended. Please wait for the admin to start a new round.
-        </p>
-      )}
+      <p className={`mt-2 text-sm ${!internalIsRoundActive ? 'font-semibold text-orange-600 dark:text-orange-400' : 'text-muted-foreground'}`}>
+        {statusMessage}
+      </p>
     </div>
   );
 };
 
 export default GoodBadButtons;
-
-    

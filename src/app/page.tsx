@@ -50,6 +50,9 @@ export default function HomePage() {
         dislikeClicks: 0,
         createdAt: new Date(),
         sessionEnded: false,
+        soundsEnabled: true, 
+        resultsVisible: true, 
+        participants: {}, 
       });
       toast({ title: "Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
@@ -95,7 +98,7 @@ export default function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-6 sm:p-12 md:p-16 bg-background">
       <div className="flex-grow flex flex-col items-center justify-center w-full space-y-8">
-        <div className="flex flex-col items-center text-center mb-8"> {/* Centering container for logo and tagline */}
+        <div className="flex flex-col items-center text-center mb-8">
           <Image
             src="/classvote-logo.png"
             alt="ClassVote Logo"
@@ -105,7 +108,7 @@ export default function HomePage() {
             data-ai-hint="logo abstract"
           />
           <p className="text-lg sm:text-xl text-muted-foreground mt-4">
-            Create or join a session to vote on sounds with others!
+            Rate presentations and provide feedback in real-time!
           </p>
         </div>
 
@@ -113,7 +116,7 @@ export default function HomePage() {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><PlusCircle className="mr-2 h-6 w-6 text-primary" />Create New Session</CardTitle>
-              <CardDescription>Start a new voting session and invite others.</CardDescription>
+              <CardDescription>Start a new feedback session for presentations.</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
@@ -161,7 +164,7 @@ export default function HomePage() {
             height={30}
             data-ai-hint="education logo"
           />
-          <span>project.</span> {/* Changed "education project." to "project." */}
+          <span>project.</span>
         </div>
       </footer>
     </main>

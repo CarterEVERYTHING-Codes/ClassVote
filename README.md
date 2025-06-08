@@ -1,7 +1,7 @@
 
 # ClassVote
 
-ClassVote is a real-time, interactive web application where users can create or join voting sessions to collectively decide on sounds. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the voting rounds and end sessions.
+ClassVote is a real-time, interactive web application where users can create or join voting sessions to collectively provide feedback, typically for presentations. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, and end sessions.
 
 ## Tech Stack
 
@@ -44,48 +44,74 @@ ClassVote is a real-time, interactive web application where users can create or 
                                request.resource.data.likeClicks == 0 &&
                                request.resource.data.dislikeClicks == 0 &&
                                request.resource.data.isRoundActive == true &&
-                               request.resource.data.sessionEnded == false; // Ensure sessionEnded is false on create
+                               request.resource.data.sessionEnded == false &&
+                               request.resource.data.soundsEnabled == true &&
+                               request.resource.data.resultsVisible == true &&
+                               request.resource.data.participants == {};
 
-              allow update: if request.auth != null && resource.data.sessionEnded == false && ( // Can only update if session has not ended
-                              // Admin actions: toggle round, clear scores, end session
+              allow update: if request.auth != null && resource.data.sessionEnded == false && (
+                              // Admin actions
                               (resource.data.adminUid == request.auth.uid &&
                                 (
-                                  // Toggle round (isRoundActive changes, like/dislike can be reset)
-                                  (request.resource.data.isRoundActive != resource.data.isRoundActive && 
+                                  // Toggle round
+                                  (request.resource.data.isRoundActive != resource.data.isRoundActive &&
                                    (request.resource.data.likeClicks == 0 || request.resource.data.likeClicks == resource.data.likeClicks) &&
                                    (request.resource.data.dislikeClicks == 0 || request.resource.data.dislikeClicks == resource.data.dislikeClicks)
-                                  ) || 
-                                  // Clear scores (like/dislike become 0)
-                                  (request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && 
-                                   request.resource.data.isRoundActive == resource.data.isRoundActive // isRoundActive doesn't change here
                                   ) ||
-                                  // End session (sessionEnded becomes true, isRoundActive can become false)
-                                  (request.resource.data.sessionEnded == true && resource.data.sessionEnded == false &&
-                                   (request.resource.data.isRoundActive == false || request.resource.data.isRoundActive == resource.data.isRoundActive)
-                                  )
+                                  // Clear scores
+                                  (request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 &&
+                                   request.resource.data.isRoundActive == resource.data.isRoundActive
+                                  ) ||
+                                  // End session
+                                  (request.resource.data.sessionEnded == true && resource.data.sessionEnded == false) ||
+                                  // Toggle soundsEnabled
+                                  (request.resource.data.soundsEnabled != resource.data.soundsEnabled) ||
+                                  // Toggle resultsVisible
+                                  (request.resource.data.resultsVisible != resource.data.resultsVisible)
                                 ) &&
-                                // Ensure admin cannot change other critical fields during these specific actions
+                                // Ensure admin doesn't change other critical fields during these specific actions, except participants map
                                 request.resource.data.adminUid == resource.data.adminUid &&
-                                request.resource.data.createdAt == resource.data.createdAt
-                              ) || 
-                              // User voting actions (like/dislike)
+                                request.resource.data.createdAt == resource.data.createdAt &&
+                                (request.resource.data.participants == resource.data.participants || request.resource.data.participants.diff(resource.data.participants).affectedKeys().size() > 0) // Allow admin to modify participants
+                              ) ||
+                              // User voting actions
                               (
-                                resource.data.isRoundActive == true && // Round must be active to vote
+                                resource.data.isRoundActive == true &&
                                 (
                                   (request.resource.data.likeClicks == resource.data.likeClicks + 1 && request.resource.data.dislikeClicks == resource.data.dislikeClicks) ||
                                   (request.resource.data.dislikeClicks == resource.data.dislikeClicks + 1 && request.resource.data.likeClicks == resource.data.likeClicks)
                                 ) &&
                                 // Ensure other critical fields are not changed by vote updates
                                 request.resource.data.adminUid == resource.data.adminUid && 
-                                request.resource.data.isRoundActive == resource.data.isRoundActive && // Should be true
-                                request.resource.data.sessionEnded == false && // Should be false
-                                request.resource.data.createdAt == resource.data.createdAt
+                                request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                request.resource.data.sessionEnded == false &&
+                                request.resource.data.createdAt == resource.data.createdAt &&
+                                request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                request.resource.data.participants == resource.data.participants // Participants map not changed by voting
+                              ) ||
+                              // User updating their own nickname in participants map
+                              (
+                                request.auth.uid in request.resource.data.participants &&
+                                request.resource.data.participants[request.auth.uid].nickname is string &&
+                                request.resource.data.participants[request.auth.uid].joinedAt != null &&
+                                // Ensure only their own participant entry is being added/modified
+                                resource.data.participants.keys().hasAny([request.auth.uid]) == false || // New participant
+                                (
+                                  resource.data.participants.keys().hasAll([request.auth.uid]) &&
+                                  request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid])
+                                ) &&
+                                // Ensure other critical fields are not changed
+                                request.resource.data.adminUid == resource.data.adminUid &&
+                                request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                request.resource.data.likeClicks == resource.data.likeClicks &&
+                                request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                request.resource.data.sessionEnded == false &&
+                                request.resource.data.createdAt == resource.data.createdAt &&
+                                request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                request.resource.data.resultsVisible == resource.data.resultsVisible
                               )
                             );
-              
-              // Admin can delete a session document if needed.
-              // However, the current application flow relies on the sessionEnded flag rather than deletion.
-              // allow delete: if request.auth != null && resource.data.adminUid == request.auth.uid; 
             }
           }
         }
@@ -102,9 +128,10 @@ ClassVote is a real-time, interactive web application where users can create or 
 *   Create new voting sessions with a unique 6-digit code.
 *   Join existing sessions using the code.
 *   Real-time "like" and "dislike" voting.
-*   Interactive sound feedback for votes.
-*   Live leaderboard displaying current scores.
-*   Admin controls to start/stop rounds, clear scores, and end sessions.
+*   Optional interactive sound feedback for votes (admin controlled).
+*   Live leaderboard displaying current scores (admin can hide/reveal).
+*   Admin controls to start/stop feedback rounds, clear scores, toggle sounds, toggle results visibility, and end sessions.
+*   Participants can set a session-specific nickname.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Anonymous user authentication via Firebase.
 ```

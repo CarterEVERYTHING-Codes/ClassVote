@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ThumbsUp, ThumbsDown } from 'lucide-react'; // Icons remain, labels change
+import { ThumbsUp, ThumbsDown, EyeOff } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface Scores {
@@ -15,9 +15,10 @@ interface Scores {
 
 interface LeaderboardProps {
   sessionId: string;
+  resultsVisible: boolean; // New prop
 }
 
-const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId }) => {
+const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible }) => {
   const [scores, setScores] = useState<Scores | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,6 +27,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId }) => {
       setLoading(false);
       return;
     }
+    setLoading(true);
     const scoresDocRef = doc(db, 'sessions', sessionId);
     const unsubscribe = onSnapshot(scoresDocRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -35,7 +37,6 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId }) => {
           dislikeClicks: data?.dislikeClicks ?? 0 
         });
       } else {
-        // Session might have been deleted or not yet created
         setScores({ likeClicks: 0, dislikeClicks: 0 });
       }
       setLoading(false);
@@ -74,6 +75,20 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId }) => {
     );
   }
 
+  if (!resultsVisible) {
+    return (
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-center text-2xl font-bold">Live Leaderboard</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <EyeOff className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">Live results are currently hidden by the admin.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="w-full max-w-md shadow-lg">
       <CardHeader>
@@ -98,9 +113,3 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId }) => {
             {scores?.dislikeClicks ?? 0}
           </span>
         </div>
-      </CardContent>
-    </Card>
-  );
-};
-
-export default Leaderboard;
