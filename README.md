@@ -107,4 +107,4 @@ ClassVote is a real-time, interactive web application where users can create or 
 *   Admin controls to start/stop rounds, clear scores, and end sessions.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Anonymous user authentication via Firebase.
-
+```
