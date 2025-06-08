@@ -113,3 +113,9 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible }) 
             {scores?.dislikeClicks ?? 0}
           </span>
         </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default Leaderboard;

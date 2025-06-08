@@ -11,13 +11,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowRight, PlusCircle } from 'lucide-react';
+import { ArrowRight, PlusCircle, UserPlus } from 'lucide-react';
 
 export default function HomePage() {
   const router = useRouter();
   const { toast } = useToast();
   const [joinCode, setJoinCode] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingQuick, setIsCreatingQuick] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
@@ -32,11 +32,11 @@ export default function HomePage() {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const handleCreateSession = async () => {
-    setIsCreating(true);
+  const handleCreateQuickSession = async () => {
+    setIsCreatingQuick(true);
     if (!auth.currentUser) {
       toast({ title: "Authentication Error", description: "Please wait for authentication to complete and try again.", variant: "destructive" });
-      setIsCreating(false);
+      setIsCreatingQuick(false);
       return;
     }
 
@@ -44,23 +44,32 @@ export default function HomePage() {
     try {
       const sessionRef = doc(db, 'sessions', newSessionId);
       await setDoc(sessionRef, {
-        adminUid: auth.currentUser.uid,
+        adminUid: auth.currentUser.uid, // This will be an anonymous UID
         isRoundActive: true,
         likeClicks: 0,
         dislikeClicks: 0,
         createdAt: new Date(),
         sessionEnded: false,
-        soundsEnabled: true, 
-        resultsVisible: true, 
-        participants: {}, 
+        soundsEnabled: true,
+        resultsVisible: true,
+        participants: {},
+        sessionType: 'quick' // Differentiating session type
       });
-      toast({ title: "Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
+      toast({ title: "Quick Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
     } catch (error) {
-      console.error("Error creating session: ", error);
+      console.error("Error creating quick session: ", error);
       toast({ title: "Error", description: "Could not create session. Please try again.", variant: "destructive" });
-      setIsCreating(false);
+      setIsCreatingQuick(false);
     }
+  };
+
+  const handleCreateWithAccountPlaceholder = () => {
+    toast({
+      title: "Coming Soon!",
+      description: "Account-based sessions with full features are under development. Please use 'Quick Session' for now.",
+      duration: 5000,
+    });
   };
 
   const handleJoinSession = async () => {
@@ -88,11 +97,11 @@ export default function HomePage() {
     setIsJoining(false);
   };
 
-  const createButtonDisabled = isCreating || isAuthLoading || !auth.currentUser;
-  const createButtonText = () => {
+  const createQuickButtonDisabled = isCreatingQuick || isAuthLoading || !auth.currentUser;
+  const createQuickButtonText = () => {
     if (isAuthLoading || !auth.currentUser) return 'Authenticating...';
-    if (isCreating) return 'Creating...';
-    return 'Create Session';
+    if (isCreatingQuick) return 'Creating...';
+    return 'Quick Session (No Account)';
   };
 
   return (
@@ -116,16 +125,30 @@ export default function HomePage() {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><PlusCircle className="mr-2 h-6 w-6 text-primary" />Create New Session</CardTitle>
-              <CardDescription>Start a new feedback session for presentations.</CardDescription>
+              <CardDescription>Choose how you want to start your feedback session.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <Button
-                onClick={handleCreateSession}
+                onClick={handleCreateQuickSession}
                 className="w-full text-lg py-6"
-                disabled={createButtonDisabled}
+                disabled={createQuickButtonDisabled}
               >
-                {createButtonText()}
+                {createQuickButtonText()}
               </Button>
+              <p className="text-xs text-muted-foreground text-center px-2">
+                Start a session quickly with core features. No account needed. Ideal for one-time use.
+              </p>
+              <Button
+                onClick={handleCreateWithAccountPlaceholder}
+                className="w-full text-lg py-6"
+                variant="outline" // Differentiate visually
+                disabled={isAuthLoading} // Can also be disabled during auth loading
+              >
+                <UserPlus className="mr-2 h-5 w-5"/> Full Features (Account)
+              </Button>
+              <p className="text-xs text-muted-foreground text-center px-2">
+                Sign in or create an account (coming soon!) to unlock all capabilities, like saving session setups.
+              </p>
             </CardContent>
           </Card>
 
