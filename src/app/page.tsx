@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase'; 
+import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,13 +95,13 @@ export default function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-6 sm:p-12 md:p-16 bg-background">
       <div className="flex-grow flex flex-col items-center justify-center w-full space-y-8">
-        <div className="text-center mb-8">
-          <Image 
-            src="/classvote-logo.png" 
-            alt="ClassVote Logo" 
-            width={400} 
-            height={80} 
-            priority 
+        <div className="flex flex-col items-center text-center mb-8"> {/* Centering container for logo and tagline */}
+          <Image
+            src="/classvote-logo.png"
+            alt="ClassVote Logo"
+            width={400}
+            height={80}
+            priority
             data-ai-hint="logo abstract"
           />
           <p className="text-lg sm:text-xl text-muted-foreground mt-4">
@@ -158,10 +158,10 @@ export default function HomePage() {
             src="/WEBSMITHSedu-logo.png"
             alt="WEBSMITHS education Logo"
             width={150}
-            height={30} 
+            height={30}
             data-ai-hint="education logo"
           />
-          <span>education project.</span>
+          <span>project.</span> {/* Changed "education project." to "project." */}
         </div>
       </footer>
     </main>
