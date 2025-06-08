@@ -102,6 +102,7 @@ export default function HomePage() {
             width={400} 
             height={80} 
             priority 
+            data-ai-hint="logo abstract"
           />
           <p className="text-lg sm:text-xl text-muted-foreground mt-4">
             Create or join a session to vote on sounds with others!
@@ -151,7 +152,17 @@ export default function HomePage() {
         </div>
       </div>
       <footer className="w-full text-center p-4 text-sm text-muted-foreground">
-        A WEBSMITHS education project.
+        <div className="flex flex-col items-center space-y-1">
+          <span>A</span>
+          <Image
+            src="/WEBSMITHSedu-logo.png"
+            alt="WEBSMITHS education Logo"
+            width={150}
+            height={30} 
+            data-ai-hint="education logo"
+          />
+          <span>education project.</span>
+        </div>
       </footer>
     </main>
   );
