@@ -1,10 +1,9 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -44,16 +43,19 @@ export default function HomePage() {
     try {
       const sessionRef = doc(db, 'sessions', newSessionId);
       await setDoc(sessionRef, {
-        adminUid: auth.currentUser.uid, // This will be an anonymous UID
+        adminUid: auth.currentUser.uid,
         isRoundActive: true,
         likeClicks: 0,
         dislikeClicks: 0,
-        createdAt: new Date(),
+        createdAt: serverTimestamp(), // Use serverTimestamp for consistency
         sessionEnded: false,
         soundsEnabled: true,
         resultsVisible: true,
         participants: {},
-        sessionType: 'quick' // Differentiating session type
+        sessionType: 'quick',
+        presenterQueue: [],
+        currentPresenterIndex: -1,
+        currentPresenterName: "",
       });
       toast({ title: "Quick Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
@@ -101,20 +103,21 @@ export default function HomePage() {
   const createQuickButtonText = () => {
     if (isAuthLoading || !auth.currentUser) return 'Authenticating...';
     if (isCreatingQuick) return 'Creating...';
-    return 'Quick Session (No Account)';
+    return 'Quick Start (No Account)';
   };
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-6 sm:p-12 md:p-16 bg-background">
       <div className="flex-grow flex flex-col items-center justify-center w-full space-y-8">
         <div className="flex flex-col items-center text-center mb-8">
-          <Image
+           <Image
             src="/classvote-logo.png"
             alt="ClassVote Logo"
             width={400}
             height={80}
             priority
             data-ai-hint="logo abstract"
+            className="self-center" 
           />
           <p className="text-lg sm:text-xl text-muted-foreground mt-4">
             Rate presentations and provide feedback in real-time!
@@ -125,7 +128,7 @@ export default function HomePage() {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><PlusCircle className="mr-2 h-6 w-6 text-primary" />Create New Session</CardTitle>
-              <CardDescription>Choose how you want to start your feedback session.</CardDescription>
+              <CardDescription>Start a feedback session for presentations.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Button
@@ -136,18 +139,18 @@ export default function HomePage() {
                 {createQuickButtonText()}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                Start a session quickly with core features. No account needed. Ideal for one-time use.
+                No account needed. Core features for immediate use.
               </p>
               <Button
                 onClick={handleCreateWithAccountPlaceholder}
                 className="w-full text-lg py-6"
-                variant="outline" // Differentiate visually
-                disabled={isAuthLoading} // Can also be disabled during auth loading
+                variant="outline"
+                disabled={isAuthLoading}
               >
                 <UserPlus className="mr-2 h-5 w-5"/> Full Features (Account)
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                Sign in or create an account (coming soon!) to unlock all capabilities, like saving session setups.
+                Sign in (coming soon!) for advanced features like saving session setups.
               </p>
             </CardContent>
           </Card>

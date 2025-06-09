@@ -1,11 +1,10 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ThumbsUp, ThumbsDown, EyeOff } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, EyeOff, Presentation } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface Scores {
@@ -15,10 +14,11 @@ interface Scores {
 
 interface LeaderboardProps {
   sessionId: string;
-  resultsVisible: boolean; // New prop
+  resultsVisible: boolean; 
+  currentPresenterName?: string | null;
 }
 
-const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible }) => {
+const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, currentPresenterName }) => {
   const [scores, setScores] = useState<Scores | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -49,11 +49,22 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible }) 
     return () => unsubscribe();
   }, [sessionId]);
 
+  const cardTitleText = currentPresenterName && currentPresenterName !== "End of Queue" && resultsVisible 
+    ? `Scores for: ${currentPresenterName}` 
+    : "Live Leaderboard";
+  
+  const showNoPresenterMessage = !currentPresenterName && resultsVisible;
+  const showQueueEndedMessage = currentPresenterName === "End of Queue" && resultsVisible;
+
+
   if (loading) {
     return (
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold">Live Leaderboard</CardTitle>
+          <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
+            <Presentation className="mr-2 h-6 w-6" />
+            Live Leaderboard
+            </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
@@ -79,7 +90,10 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible }) 
     return (
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold">Live Leaderboard</CardTitle>
+          <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
+             <Presentation className="mr-2 h-6 w-6" />
+            Live Leaderboard
+            </CardTitle>
         </CardHeader>
         <CardContent className="text-center py-8">
           <EyeOff className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -89,10 +103,56 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible }) 
     );
   }
 
+  if (showNoPresenterMessage) {
+    return (
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
+            <Presentation className="mr-2 h-6 w-6" />
+            Live Leaderboard
+            </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <p className="text-muted-foreground">Waiting for admin to select a presenter.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (showQueueEndedMessage) {
+    return (
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
+            <Presentation className="mr-2 h-6 w-6" />
+            Live Leaderboard
+            </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <p className="text-muted-foreground">All presentations have concluded. Final scores were:</p>
+           <div className="flex items-center justify-center space-x-6 p-3 mt-2">
+            <div className="flex items-center space-x-2">
+              <ThumbsUp className="h-6 w-6 text-green-500" />
+              <span className="text-lg font-bold">{scores?.likeClicks ?? 0}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <ThumbsDown className="h-6 w-6 text-red-500" />
+              <span className="text-lg font-bold">{scores?.dislikeClicks ?? 0}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+
   return (
     <Card className="w-full max-w-md shadow-lg">
       <CardHeader>
-        <CardTitle className="text-center text-2xl font-bold">Live Leaderboard</CardTitle>
+        <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
+            <Presentation className="mr-2 h-6 w-6" />
+            {cardTitleText}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between p-3 bg-green-100 dark:bg-green-900/30 rounded-lg shadow">

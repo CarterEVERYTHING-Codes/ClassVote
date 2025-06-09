@@ -10,18 +10,19 @@ import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 import Leaderboard from '@/components/leaderboard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff } from 'lucide-react';
+import { Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff, ListChecks, ChevronRight, ChevronsRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FirebaseError } from 'firebase/app';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ParticipantData {
   nickname: string;
-  joinedAt: Timestamp | any; // Firestore Timestamp or serverTimestamp placeholder
+  joinedAt: Timestamp | any; 
 }
 
 interface SessionData {
@@ -34,6 +35,10 @@ interface SessionData {
   soundsEnabled: boolean;
   resultsVisible: boolean;
   participants: Record<string, ParticipantData>;
+  presenterQueue?: string[];
+  currentPresenterIndex?: number;
+  currentPresenterName?: string;
+  sessionType?: string; // Added to ensure all fields are covered
 }
 
 export default function SessionPage() {
@@ -51,19 +56,19 @@ export default function SessionPage() {
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('');
   const [isSavingNickname, setIsSavingNickname] = useState(false);
+  const [presenterQueueInput, setPresenterQueueInput] = useState('');
 
-  // Effect for Firebase Authentication state changes
+
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
-      if (!user) { // If user logs out or becomes null
-        setNicknameInput(''); // Clear the nickname input
+      if (!user) { 
+        setNicknameInput(''); 
       }
     });
     return () => unsubscribeAuth();
-  }, []); // Runs once on mount
+  }, []); 
 
-  // Effect for fetching and subscribing to Firestore session data
   useEffect(() => {
     if (!sessionId) {
       setIsLoading(false);
@@ -78,8 +83,20 @@ export default function SessionPage() {
       setIsLoading(false);
       if (docSnap.exists()) {
         const data = docSnap.data() as SessionData;
-        setSessionData(data); // This will trigger re-render
+        setSessionData(data);
         
+        if (data.presenterQueue && data.presenterQueue.length > 0 && data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= 0 && data.currentPresenterIndex < data.presenterQueue.length) {
+            // If there's a valid presenter queue and index, ensure currentPresenterName is set
+            if (data.currentPresenterName !== data.presenterQueue[data.currentPresenterIndex]) {
+                // This scenario is unlikely if server logic is correct but good for consistency
+                // Consider if an updateDoc is needed here or if client derivation is enough
+            }
+        } else if (data.presenterQueue && data.presenterQueue.join(',') !== presenterQueueInput && !presenterQueueInput) {
+            // Pre-fill presenter queue input if it's empty and there's a queue in Firestore
+            setPresenterQueueInput(data.presenterQueue.join('\n'));
+        }
+
+
         if (data.sessionEnded) {
           setError("This session has ended.");
         } else {
@@ -97,21 +114,16 @@ export default function SessionPage() {
     });
 
     return () => unsubscribeFirestore();
-  }, [sessionId, toast, router]); // Removed currentUser and nicknameInput from dependencies
+  }, [sessionId, toast, router]); 
 
-  // Effect to pre-fill nicknameInput based on sessionData and currentUser
   useEffect(() => {
     if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname) {
-      // Only pre-fill if the input field is currently empty.
-      // This avoids overwriting user input if they've already started typing or modified it.
       if (nicknameInput === '') {
         setNicknameInput(sessionData.participants[currentUser.uid].nickname);
       }
     }
-    // Note: If user logs out, the onAuthStateChanged effect clears nicknameInput.
-  }, [currentUser, sessionData]); // No nicknameInput in this dependency array
+  }, [currentUser, sessionData, nicknameInput]);
 
-  // Effect to determine if the current user is the admin
   useEffect(() => {
     if (currentUser && sessionData) {
       setIsCurrentUserAdmin(currentUser.uid === sessionData.adminUid);
@@ -218,6 +230,57 @@ export default function SessionPage() {
     }
   };
 
+  const handleSetPresenterQueue = () =>
+    handleAdminAction(
+        async () => {
+            const newQueue = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name.length > 0);
+            const sessionDocRef = doc(db, 'sessions', sessionId);
+            await updateDoc(sessionDocRef, {
+                presenterQueue: newQueue,
+                currentPresenterIndex: newQueue.length > 0 ? 0 : -1,
+                currentPresenterName: newQueue.length > 0 ? newQueue[0] : "",
+                likeClicks: 0, // Reset scores for the first presenter
+                dislikeClicks: 0,
+                isRoundActive: newQueue.length > 0, // Activate round if there's a presenter
+            });
+            if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
+        },
+        "Presenter list updated. Scores reset and round started for the first presenter if any.",
+        "Could not update presenter list."
+    );
+
+  const handleNextPresenter = () =>
+    handleAdminAction(
+        async () => {
+            if (!sessionData || !sessionData.presenterQueue || sessionData.presenterQueue.length === 0) {
+                toast({ title: "No Presenters", description: "Presenter list is empty.", variant: "default" });
+                return;
+            }
+            const currentIndex = sessionData.currentPresenterIndex ?? -1;
+            const newIndex = currentIndex + 1;
+
+            if (newIndex >= sessionData.presenterQueue.length) {
+                toast({ title: "End of Queue", description: "You have reached the end of the presenter list.", variant: "default" });
+                // Optionally, set isRoundActive to false or end session
+                 await updateDoc(doc(db, 'sessions', sessionId), { isRoundActive: false, currentPresenterName: "End of Queue" });
+                return;
+            }
+
+            const sessionDocRef = doc(db, 'sessions', sessionId);
+            await updateDoc(sessionDocRef, {
+                currentPresenterIndex: newIndex,
+                currentPresenterName: sessionData.presenterQueue[newIndex],
+                likeClicks: 0,
+                dislikeClicks: 0,
+                isRoundActive: true,
+            });
+            if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
+        },
+        "Advanced to the next presenter. Scores reset and round started.",
+        "Could not advance to the next presenter."
+    );
+
+
   const copySessionCode = () => {
     if (!sessionId) return;
     navigator.clipboard.writeText(sessionId)
@@ -272,10 +335,14 @@ export default function SessionPage() {
         return timeA - timeB;
     });
 
+  const currentPresenterDisplayName = sessionData.currentPresenterName || "N/A (Setup Presenter List)";
+  const isQueueAtEnd = sessionData.presenterQueue && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >= sessionData.presenterQueue.length -1;
+
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-6 sm:p-12 md:p-16 bg-background space-y-8">
       <div className="text-center">
-        <div className="flex items-center justify-center mb-2">
+        <div className="flex items-center justify-center mb-1">
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline font-bold text-foreground">
             Session: {sessionId}
           </h1>
@@ -283,7 +350,19 @@ export default function SessionPage() {
             <Copy className="h-5 w-5" />
           </Button>
         </div>
-        <p className="text-lg sm:text-xl text-muted-foreground">
+        {sessionData.currentPresenterName && sessionData.currentPresenterName !== "End of Queue" && (
+            <p className="text-2xl font-semibold text-accent">Now Presenting: {sessionData.currentPresenterName}</p>
+        )}
+        {sessionData.currentPresenterName === "End of Queue" && (
+             <p className="text-2xl font-semibold text-muted-foreground">Presenter queue finished.</p>
+        )}
+        {(!sessionData.currentPresenterName || sessionData.currentPresenterIndex === -1) && !isCurrentUserAdmin && (
+             <p className="text-xl font-semibold text-muted-foreground">Waiting for admin to start presentations...</p>
+        )}
+         {(!sessionData.currentPresenterName || sessionData.currentPresenterIndex === -1) && isCurrentUserAdmin && (
+             <p className="text-xl font-semibold text-muted-foreground">Please set up the presenter list below to begin.</p>
+        )}
+        <p className="text-lg sm:text-xl text-muted-foreground mt-1">
           {sessionData.isRoundActive ? "Feedback round is OPEN. " : "Feedback round is CLOSED. "}
           {!sessionData.sessionEnded && "Cast your vote!"}
         </p>
@@ -311,13 +390,17 @@ export default function SessionPage() {
         </Card>
       )}
 
-      <Leaderboard sessionId={sessionId} resultsVisible={sessionData.resultsVisible} />
+      <Leaderboard 
+        sessionId={sessionId} 
+        resultsVisible={sessionData.resultsVisible}
+        currentPresenterName={sessionData.currentPresenterName}
+      />
       
       {!sessionData.sessionEnded && (
         <div className="mt-8">
             <GoodBadButtonsLoader 
                 sessionId={sessionId} 
-                isRoundActive={sessionData.isRoundActive && !sessionData.sessionEnded} 
+                isRoundActive={sessionData.isRoundActive && !sessionData.sessionEnded && (sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >=0)} 
                 soundsEnabled={sessionData.soundsEnabled}
             />
         </div>
@@ -346,49 +429,82 @@ export default function SessionPage() {
 
 
       {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
-        <Card className="w-full max-w-md shadow-lg mt-12">
+        <Card className="w-full max-w-lg shadow-lg mt-12">
           <CardHeader>
             <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
               <ShieldAlert className="mr-2 h-6 w-6" /> Admin Controls
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-             <div className="text-sm text-center font-medium">
-                Feedback Round: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>{sessionData.isRoundActive ? 'OPEN' : 'CLOSED'}</span>
-              </div>
-            <Button onClick={handleToggleRound} variant="outline" className="w-full" disabled={isProcessingAdminAction}>
-              {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-              {sessionData.isRoundActive ? 'Close Feedback Round' : 'Open Feedback Round & Reset Votes'}
-            </Button>
-            <Button onClick={handleClearScores} variant="outline" className="w-full" disabled={isProcessingAdminAction}>
-              <RotateCcw className="mr-2 h-4 w-4" /> Clear Scores & Reset Votes
-            </Button>
-            
-            <div className="flex items-center justify-between space-x-2 pt-2 border-t mt-4 pt-4">
-              <Label htmlFor="sounds-enabled" className="flex items-center text-sm">
-                {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
-                Vote Sounds
-              </Label>
-              <Switch
-                id="sounds-enabled"
-                checked={sessionData.soundsEnabled}
-                onCheckedChange={handleToggleSounds}
-                disabled={isProcessingAdminAction}
-              />
+          <CardContent className="space-y-6">
+            {/* Presenter Queue Management */}
+            <div className="space-y-3 border p-4 rounded-md">
+                <h3 className="text-lg font-semibold flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary" />Presenter List</h3>
+                <Textarea
+                    placeholder="Enter presenter names, one per line..."
+                    value={presenterQueueInput}
+                    onChange={(e) => setPresenterQueueInput(e.target.value)}
+                    rows={4}
+                    disabled={isProcessingAdminAction}
+                />
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full sm:w-auto" disabled={isProcessingAdminAction || !presenterQueueInput.trim()}>
+                        Set/Update Presenter List
+                    </Button>
+                    <Button 
+                        onClick={handleNextPresenter} 
+                        className="w-full sm:w-auto" 
+                        disabled={isProcessingAdminAction || !sessionData.presenterQueue || sessionData.presenterQueue.length === 0 || isQueueAtEnd || sessionData.currentPresenterIndex === -1}
+                    >
+                        Next Presenter <ChevronsRight className="ml-2 h-4 w-4"/>
+                    </Button>
+                </div>
+                {sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        Current: {sessionData.currentPresenterName || "N/A"} ({(sessionData.currentPresenterIndex ?? -1) + 1} of {sessionData.presenterQueue.length})
+                    </p>
+                )}
             </div>
-            <div className="flex items-center justify-between space-x-2">
-              <Label htmlFor="results-visible" className="flex items-center text-sm">
-                {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
-                Live Results Visible
-              </Label>
-              <Switch
-                id="results-visible"
-                checked={sessionData.resultsVisible}
-                onCheckedChange={handleToggleResultsVisibility}
-                disabled={isProcessingAdminAction}
-              />
+
+            {/* General Controls */}
+            <div className="space-y-4 border p-4 rounded-md">
+                 <h3 className="text-lg font-semibold">General Controls</h3>
+                 <div className="text-sm text-center font-medium">
+                    Feedback Round: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>{sessionData.isRoundActive ? 'OPEN' : 'CLOSED'}</span>
+                  </div>
+                <Button onClick={handleToggleRound} variant="outline" className="w-full" disabled={isProcessingAdminAction || sessionData.currentPresenterIndex === -1}>
+                  {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                  {sessionData.isRoundActive ? 'Close Feedback Round' : 'Open Feedback Round'}
+                </Button>
+                <Button onClick={handleClearScores} variant="outline" className="w-full" disabled={isProcessingAdminAction || sessionData.currentPresenterIndex === -1}>
+                  <RotateCcw className="mr-2 h-4 w-4" /> Clear Scores & Reset Votes
+                </Button>
+                
+                <div className="flex items-center justify-between space-x-2 pt-2 border-t mt-4 pt-4">
+                  <Label htmlFor="sounds-enabled" className="flex items-center text-sm">
+                    {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
+                    Vote Sounds
+                  </Label>
+                  <Switch
+                    id="sounds-enabled"
+                    checked={sessionData.soundsEnabled}
+                    onCheckedChange={handleToggleSounds}
+                    disabled={isProcessingAdminAction}
+                  />
+                </div>
+                <div className="flex items-center justify-between space-x-2">
+                  <Label htmlFor="results-visible" className="flex items-center text-sm">
+                    {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
+                    Live Results Visible
+                  </Label>
+                  <Switch
+                    id="results-visible"
+                    checked={sessionData.resultsVisible}
+                    onCheckedChange={handleToggleResultsVisibility}
+                    disabled={isProcessingAdminAction}
+                  />
+                </div>
             </div>
-            <Button onClick={handleEndSession} variant="destructive" className="w-full !mt-6" disabled={isProcessingAdminAction}>
+            <Button onClick={handleEndSession} variant="destructive" className="w-full !mt-8" disabled={isProcessingAdminAction}>
               <Trash2 className="mr-2 h-4 w-4" /> End Session
             </Button>
           </CardContent>
@@ -412,10 +528,4 @@ export default function SessionPage() {
        {!isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && !error && (
          <Button onClick={() => router.push('/')} variant="outline" className="mt-12">
             <Home className="mr-2 h-4 w-4" /> Leave Session
-        </Button>
-       )}
-    </main>
-  );
-}
-
-    
+        

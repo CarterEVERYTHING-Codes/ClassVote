@@ -1,7 +1,7 @@
 
 # ClassVote
 
-ClassVote is a real-time, interactive web application where users can create or join voting sessions to collectively provide feedback, typically for presentations. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, and end sessions.
+ClassVote is a real-time, interactive web application where users can create or join voting sessions to collectively provide feedback, typically for presentations. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, presenter queues, and end sessions.
 
 ## Tech Stack
 
@@ -50,70 +50,113 @@ ClassVote is a real-time, interactive web application where users can create or 
                                request.resource.data.sessionType == 'quick' &&
                                request.resource.data.participants is map &&
                                request.resource.data.participants.size() == 0 &&
+                               request.resource.data.presenterQueue is list &&
+                               request.resource.data.presenterQueue.size() == 0 &&
+                               request.resource.data.currentPresenterIndex == -1 &&
+                               request.resource.data.currentPresenterName == "" &&
                                request.resource.data.createdAt == request.time;
 
               allow update: if request.auth != null && resource.data.sessionEnded == false && (
                               // Admin actions
                               (resource.data.adminUid == request.auth.uid &&
-                                (
-                                  // Toggle round (optionally resets scores)
-                                  (request.resource.data.isRoundActive != resource.data.isRoundActive &&
-                                   (request.resource.data.likeClicks == 0 || request.resource.data.likeClicks == resource.data.likeClicks) && // Allow resetting clicks or keeping them
-                                   (request.resource.data.dislikeClicks == 0 || request.resource.data.dislikeClicks == resource.data.dislikeClicks) &&
-                                   // For this action, other fields must match or be explicitly part of the change
-                                   request.resource.data.sessionEnded == resource.data.sessionEnded &&
-                                   request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                   request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                   request.resource.data.participants == resource.data.participants // Participants not changed by this action
-                                  ) ||
-                                  // Clear scores (round state doesn't change here)
-                                  (request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 &&
-                                   request.resource.data.isRoundActive == resource.data.isRoundActive && // isRoundActive should not change here
-                                   // For this action, other fields must match
-                                   request.resource.data.sessionEnded == resource.data.sessionEnded &&
-                                   request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                   request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                   request.resource.data.participants == resource.data.participants // Participants not changed by this action
-                                  ) ||
-                                  // End session
-                                  (request.resource.data.sessionEnded == true && resource.data.sessionEnded == false &&
-                                   // When ending, isRoundActive might also be set to false by client, allow if other fields match
-                                   (request.resource.data.isRoundActive == false || request.resource.data.isRoundActive == resource.data.isRoundActive) &&
-                                   request.resource.data.likeClicks == resource.data.likeClicks &&
-                                   request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                   request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                   request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                   request.resource.data.participants == resource.data.participants // Participants not changed by this action
-                                  ) ||
-                                  // Toggle soundsEnabled
-                                  (request.resource.data.soundsEnabled != resource.data.soundsEnabled &&
-                                   // For this action, other fields must match
-                                   request.resource.data.isRoundActive == resource.data.isRoundActive &&
-                                   request.resource.data.likeClicks == resource.data.likeClicks &&
-                                   request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                   request.resource.data.sessionEnded == resource.data.sessionEnded &&
-                                   request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                   request.resource.data.participants == resource.data.participants // Participants not changed by this action
-                                  ) ||
-                                  // Toggle resultsVisible
-                                  (request.resource.data.resultsVisible != resource.data.resultsVisible &&
-                                   // For this action, other fields must match
-                                   request.resource.data.isRoundActive == resource.data.isRoundActive &&
-                                   request.resource.data.likeClicks == resource.data.likeClicks &&
-                                   request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                   request.resource.data.sessionEnded == resource.data.sessionEnded &&
-                                   request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                   request.resource.data.participants == resource.data.participants // Participants not changed by this action
-                                  )
-                                ) &&
-                                // Ensure admin doesn't change other immutable fields during these specific actions
+                                // Ensure admin doesn't change immutable fields or participant map directly
                                 request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.createdAt == resource.data.createdAt &&
-                                request.resource.data.sessionType == resource.data.sessionType // sessionType should not be changed by these admin actions
+                                request.resource.data.sessionType == resource.data.sessionType &&
+                                request.resource.data.participants == resource.data.participants && 
+                                (
+                                  // Toggle round (optionally resets scores)
+                                  (
+                                    request.resource.data.isRoundActive != resource.data.isRoundActive &&
+                                    (request.resource.data.likeClicks == 0 || request.resource.data.likeClicks == resource.data.likeClicks) &&
+                                    (request.resource.data.dislikeClicks == 0 || request.resource.data.dislikeClicks == resource.data.dislikeClicks) &&
+                                    // Ensure other relevant admin-controlled fields are not changed by this specific action
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName
+                                  ) ||
+                                  // Clear scores
+                                  (
+                                    request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 &&
+                                    request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName
+                                  ) ||
+                                  // End session
+                                  (
+                                    request.resource.data.sessionEnded == true && resource.data.sessionEnded == false &&
+                                    (request.resource.data.isRoundActive == false || request.resource.data.isRoundActive == resource.data.isRoundActive) && // isRoundActive might be set to false
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName
+                                  ) ||
+                                  // Toggle soundsEnabled
+                                  (
+                                    request.resource.data.soundsEnabled != resource.data.soundsEnabled &&
+                                    request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName
+                                  ) ||
+                                  // Toggle resultsVisible
+                                  (
+                                    request.resource.data.resultsVisible != resource.data.resultsVisible &&
+                                    request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName
+                                  ) ||
+                                  // Set/Update Presenter Queue (resets scores and current presenter)
+                                  (
+                                    request.resource.data.presenterQueue is list &&
+                                    request.resource.data.currentPresenterIndex is number && (request.resource.data.currentPresenterIndex == 0 || request.resource.data.currentPresenterIndex == -1) &&
+                                    request.resource.data.currentPresenterName is string &&
+                                    request.resource.data.likeClicks == 0 && // Scores reset
+                                    request.resource.data.dislikeClicks == 0 && // Scores reset
+                                    (request.resource.data.isRoundActive == true || request.resource.data.isRoundActive == (request.resource.data.presenterQueue.size() > 0)) && // Round active if queue has items
+                                    // Other operational fields must match existing
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible
+                                  ) ||
+                                  // Advance to Next Presenter (resets scores, updates presenter index/name, activates round)
+                                  (
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue && // Queue itself not changed by this specific action
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex + 1 &&
+                                    request.resource.data.currentPresenterName is string && // New presenter name will be sent
+                                    request.resource.data.likeClicks == 0 && // Scores reset
+                                    request.resource.data.dislikeClicks == 0 && // Scores reset
+                                    request.resource.data.isRoundActive == true && // Round becomes active
+                                    // Other operational fields must match existing
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible
+                                  )
+                                )
                               ) ||
                               // User voting actions
                               (
                                 resource.data.isRoundActive == true &&
+                                (resource.data.currentPresenterIndex == -1 || resource.data.currentPresenterIndex >= resource.data.presenterQueue.size()) == false && // Voting only if presenter is active
                                 (
                                   (request.resource.data.likeClicks == resource.data.likeClicks + 1 && request.resource.data.dislikeClicks == resource.data.dislikeClicks) ||
                                   (request.resource.data.dislikeClicks == resource.data.dislikeClicks + 1 && request.resource.data.likeClicks == resource.data.likeClicks)
@@ -126,7 +169,10 @@ ClassVote is a real-time, interactive web application where users can create or 
                                 request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                 request.resource.data.resultsVisible == resource.data.resultsVisible &&
                                 request.resource.data.sessionType == resource.data.sessionType &&
-                                request.resource.data.participants == resource.data.participants // Participants map not changed by voting
+                                request.resource.data.participants == resource.data.participants &&
+                                request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                request.resource.data.currentPresenterName == resource.data.currentPresenterName
                               ) ||
                               // User setting/updating their own nickname in participants map
                               (
@@ -184,8 +230,11 @@ ClassVote is a real-time, interactive web application where users can create or 
 
 ## Key Features
 
-*   Create new voting sessions with a unique 6-digit code ("Quick Session" or "Full Features" options).
+*   Create new voting sessions with a unique 6-digit code.
 *   Join existing sessions using the code.
+*   Admin can define a list of presenters for the session.
+*   Admin can advance through presenters, resetting scores and feedback rounds for each.
+*   Current presenter's name is displayed to all participants.
 *   Real-time "like" and "dislike" voting.
 *   Admin controls for vote sounds (on/off) and live results visibility (show/hide).
 *   Live leaderboard displaying current scores (admin can hide/reveal).
@@ -193,5 +242,5 @@ ClassVote is a real-time, interactive web application where users can create or 
 *   Participants can set a session-specific nickname.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Anonymous user authentication via Firebase for quick sessions.
-
     
+```
