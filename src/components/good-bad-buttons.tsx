@@ -31,9 +31,6 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       const voted = localStorage.getItem(localStorageKey) === 'true';
       setHasVotedInCurrentRound(voted);
     } else {
-      // If round becomes inactive, clear vote status for THIS session instance
-      // This primarily handles admin closing the round explicitly.
-      // If admin clears scores or advances presenter, that clears localStorage in the SessionPage component.
       localStorage.removeItem(localStorageKey);
       setHasVotedInCurrentRound(false);
     }
@@ -41,39 +38,52 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
 
 
   useEffect(() => {
-    likeSynth.current = new Tone.Synth().toDestination();
-    dislikeSynth.current = new Tone.Synth().toDestination();
-    
-    if (likeSynth.current) {
-      likeSynth.current.oscillator.type = "sine";
-      likeSynth.current.envelope.attack = 0.01;
-      likeSynth.current.envelope.decay = 0.1;
-      likeSynth.current.envelope.sustain = 0.3;
-      likeSynth.current.envelope.release = 0.4;
-      likeSynth.current.volume.value = -3; // Slightly louder
-    }
+    const initializeAudio = async () => {
+      try {
+        if (Tone.context.state !== "running") {
+          await Tone.start();
+        }
+      } catch (e) {
+        console.warn("Tone.js could not start audio context on mount (will attempt on first click):", e);
+      }
 
-    if (dislikeSynth.current) {
-      dislikeSynth.current.oscillator.type = "sawtooth";
-      dislikeSynth.current.envelope.attack = 0.05;
-      dislikeSynth.current.envelope.decay = 0.2;
-      dislikeSynth.current.envelope.sustain = 0.1;
-      dislikeSynth.current.envelope.release = 0.5;
-      dislikeSynth.current.volume.value = -9; // Slightly louder
-    }
+      if (!likeSynth.current) {
+        likeSynth.current = new Tone.Synth().toDestination();
+        likeSynth.current.oscillator.type = "sine";
+        likeSynth.current.envelope.attack = 0.01;
+        likeSynth.current.envelope.decay = 0.1;
+        likeSynth.current.envelope.sustain = 0.3;
+        likeSynth.current.envelope.release = 0.4;
+        likeSynth.current.volume.value = -3;
+      }
+
+      if (!dislikeSynth.current) {
+        dislikeSynth.current = new Tone.Synth().toDestination();
+        dislikeSynth.current.oscillator.type = "sawtooth";
+        dislikeSynth.current.envelope.attack = 0.05;
+        dislikeSynth.current.envelope.decay = 0.2;
+        dislikeSynth.current.envelope.sustain = 0.1;
+        dislikeSynth.current.envelope.release = 0.5;
+        dislikeSynth.current.volume.value = -9;
+      }
+    };
+
+    initializeAudio();
 
     return () => {
       likeSynth.current?.dispose();
+      likeSynth.current = null;
       dislikeSynth.current?.dispose();
+      dislikeSynth.current = null;
     };
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount
 
   const ensureAudioContextStarted = async () => {
     if (Tone.context.state !== "running") {
       try {
         await Tone.start();
       } catch (error) {
-        console.error("Failed to start audio context:", error);
+        console.error("Failed to start audio context on demand:", error);
         toast({
           title: "Audio Error",
           description: "Could not initialize audio. Please interact with the page again or check browser settings.",
@@ -89,12 +99,11 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
     if (!sessionId) return false;
     const sessionDocRef = doc(db, 'sessions', sessionId);
     try {
-      // Re-fetch session doc just before updating to check isRoundActive server-side
       const currentSessionDoc = await getDoc(sessionDocRef);
       if (!currentSessionDoc.exists() || !currentSessionDoc.data()?.isRoundActive) {
         toast({ title: "Vote Not Counted", description: "The feedback round may have just closed or the session has ended.", variant: "default" });
-        setInternalIsRoundActive(false); // Reflect server state
-        localStorage.removeItem(localStorageKey); // Clear vote status as round is confirmed closed
+        setInternalIsRoundActive(false); 
+        localStorage.removeItem(localStorageKey); 
         setHasVotedInCurrentRound(false);
         return false;
       }
@@ -112,19 +121,25 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       } else {
           toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
       }
-      // Attempt to sync local state with server state on error
-      const currentSessionDoc = await getDoc(sessionDocRef);
-      if (currentSessionDoc.exists()) {
-        const isActive = currentSessionDoc.data()?.isRoundActive ?? false;
-        setInternalIsRoundActive(isActive);
-        if (!isActive) {
+      try {
+        const currentSessionDoc = await getDoc(sessionDocRef);
+        if (currentSessionDoc.exists()) {
+          const isActive = currentSessionDoc.data()?.isRoundActive ?? false;
+          setInternalIsRoundActive(isActive);
+          if (!isActive) {
+            localStorage.removeItem(localStorageKey);
+            setHasVotedInCurrentRound(false);
+          }
+        } else { 
+          setInternalIsRoundActive(false);
           localStorage.removeItem(localStorageKey);
           setHasVotedInCurrentRound(false);
         }
-      } else { // Session might have been deleted
-        setInternalIsRoundActive(false);
-        localStorage.removeItem(localStorageKey);
-        setHasVotedInCurrentRound(false);
+      } catch (docReadError) {
+        console.error("Error re-reading session doc for state sync:", docReadError);
+         setInternalIsRoundActive(false); // Fallback if re-read fails
+         localStorage.removeItem(localStorageKey);
+         setHasVotedInCurrentRound(false);
       }
       return false;
     }
@@ -133,6 +148,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   const playLikeSound = async () => {
     if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound) return;
     if (soundsEnabled && !await ensureAudioContextStarted()) return;
+    if (!likeSynth.current) return;
     
     setIsLoadingClick(true); 
     const scoreUpdated = await updateScore('like');
@@ -148,6 +164,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   const playDislikeSound = async () => {
     if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound) return;
     if (soundsEnabled && !await ensureAudioContextStarted()) return;
+    if (!dislikeSynth.current) return;
 
     setIsLoadingClick(true); 
     const scoreUpdated = await updateScore('dislike');
@@ -173,7 +190,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   }
 
 
-  if (isLoadingClick && !buttonDisabledState) { // Show loading state only if buttons were enabled before click
+  if (isLoadingClick && !buttonDisabledState) { 
       return (
         <div className="flex flex-col items-center space-y-3 w-full max-w-md">
           <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 w-full">
@@ -218,4 +235,3 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
 };
 
 export default GoodBadButtons;
-
