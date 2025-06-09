@@ -194,3 +194,4 @@ ClassVote is a real-time, interactive web application where users can create or 
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Anonymous user authentication via Firebase for quick sessions.
 
+    
