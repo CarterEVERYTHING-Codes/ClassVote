@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue } from 'firebase/firestore'; // Ensure FieldValue is imported
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils";
 
 interface ParticipantData {
   nickname: string;
-  joinedAt: Timestamp | FieldValue;
+  joinedAt: Timestamp | FieldValue; // joinedAt can be FieldValue on write, Timestamp on read
 }
 
 // Interface for data READ from Firestore
@@ -98,8 +98,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[]; // Array of KeyTakeaway (read interface)
-  questions?: Question[];     // Array of Question (read interface)
+  keyTakeaways?: KeyTakeaway[];
+  questions?: Question[];
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -433,9 +433,9 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() // This returns FieldValue, correctly typed
+            submittedAt: serverTimestamp()
         };
-        // console.log("Attempting to submit Key Takeaway:", newTakeaway); // Keep for debugging if needed
+        // console.log("Attempting to submit Key Takeaway:", JSON.stringify(newTakeaway, null, 2)); // For debugging
 
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
@@ -469,9 +469,9 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp() // This returns FieldValue, correctly typed
+            submittedAt: serverTimestamp()
         };
-        // console.log("Attempting to submit Question:", newQuestion); // Keep for debugging if needed
+        // console.log("Attempting to submit Question:", JSON.stringify(newQuestion, null, 2)); // For debugging
 
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -547,8 +547,11 @@ export default function SessionPage() {
   const participantList = Object.entries(sessionData.participants || {})
     .map(([uid, data]) => ({ uid, nickname: data.nickname, joinedAt: data.joinedAt }))
     .sort((a, b) => {
-        const timeA = a.joinedAt instanceof Timestamp ? a.joinedAt.toMillis() : (typeof a.joinedAt === 'number' ? a.joinedAt : 0);
-        const timeB = b.joinedAt instanceof Timestamp ? b.joinedAt.toMillis() : (typeof b.joinedAt === 'number' ? b.joinedAt : 0);
+        const timeAValue = a.joinedAt;
+        const timeBValue = b.joinedAt;
+        // Handle serverTimestamp() which might not be a Timestamp instance yet client-side
+        const timeA = timeAValue instanceof Timestamp ? timeAValue.toMillis() : (typeof (timeAValue as any)?.seconds === 'number' ? (timeAValue as any).seconds * 1000 : Date.now());
+        const timeB = timeBValue instanceof Timestamp ? timeBValue.toMillis() : (typeof (timeBValue as any)?.seconds === 'number' ? (timeBValue as any).seconds * 1000 : Date.now());
         return timeA - timeB;
     });
 
@@ -680,7 +683,7 @@ export default function SessionPage() {
                 "space-y-4",
                  isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
             )}>
-                 {(participantList.length > 0 || isCurrentUserAdmin) && ( // Show participants if list not empty OR if admin
+                 {(participantList.length > 0 || isCurrentUserAdmin) && ( 
                     <Card className="w-full shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-xl font-bold flex items-center justify-center">
@@ -701,7 +704,6 @@ export default function SessionPage() {
                     </Card>
                 )}
                 
-                {/* Non-Admin Submission Forms */}
                 {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
