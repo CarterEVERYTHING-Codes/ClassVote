@@ -33,7 +33,7 @@ import {
   } from "@/components/ui/accordion";
 import {
     Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, MessageSquarePlus, Lightbulb, HelpCircle, Send, Info, UserPlusIcon,
+    ListChecks, ChevronsRight, MessageSquarePlus, Lightbulb, Send, Info, UserPlusIcon,
     FileText, MessageCircleQuestion
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -42,6 +42,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDistanceToNow } from 'date-fns';
 import { ThemeToggleButton } from '@/components/theme-toggle-button';
+import { cn } from "@/lib/utils";
 
 
 interface ParticipantData {
@@ -292,16 +293,15 @@ export default function SessionPage() {
   }
 
  const executeEndSession = async () => {
-    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
-      setShowEndSessionDialog(false);
-      return;
-    }
-    setIsProcessingAdminAction(true);
+    setIsProcessingAdminAction(true); // Set at the beginning
     try {
+      if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
+        // No toast needed here if it's just a state check
+        return;
+      }
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      setShowEndSessionDialog(false); // Close dialog on success
       router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -310,7 +310,8 @@ export default function SessionPage() {
       else if (error instanceof Error) errorMessage = `Could not end session: ${error.message}`;
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
     } finally {
-      setIsProcessingAdminAction(false); // Ensure this is always called
+      setIsProcessingAdminAction(false);
+      setShowEndSessionDialog(false); // Ensure dialog is closed
     }
   };
 
@@ -592,9 +593,12 @@ export default function SessionPage() {
         )}
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-            {/* Left Column (Participant Interactions / Admin Forms) */}
-            <section className="lg:col-span-6 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start">
+            {/* Left Column */}
+            <section className={cn(
+                "space-y-4",
+                isCurrentUserAdmin ? "md:col-span-6" : "md:col-span-8"
+            )}>
                 {!isCurrentUserAdmin && !sessionData.sessionEnded && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
@@ -669,9 +673,12 @@ export default function SessionPage() {
                 )}
             </section>
 
-            {/* Right Column (Admin Controls & Participant List / Non-Admin Participant List) */}
-            <section className="lg:col-span-6 space-y-6">
-                {participantList.length > 0 && (
+            {/* Right Column */}
+            <section className={cn(
+                "space-y-4",
+                isCurrentUserAdmin ? "md:col-span-6" : "md:col-span-4"
+            )}>
+                {(participantList.length > 0 || isCurrentUserAdmin) && (
                     <Card className="w-full shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-xl font-bold flex items-center justify-center">
@@ -1026,5 +1033,3 @@ export default function SessionPage() {
     </main>
   );
 }
-
-    
