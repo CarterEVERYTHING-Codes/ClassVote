@@ -63,7 +63,7 @@ interface KeyTakeawayWrite {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: FieldValue;
+    submittedAt: FieldValue; // Correct type for serverTimestamp()
 }
 
 // Interface for data READ from Firestore
@@ -79,7 +79,7 @@ interface QuestionWrite {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: FieldValue;
+    submittedAt: FieldValue; // Correct type for serverTimestamp()
 }
 
 interface SessionData {
@@ -428,12 +428,16 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
+        
         const newTakeaway: KeyTakeawayWrite = { 
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() 
+            submittedAt: serverTimestamp() // This returns FieldValue
         };
+        console.log("Submitting Key Takeaway:", JSON.stringify(newTakeaway, null, 2));
+        // Note: serverTimestamp() will appear as a function or special object in console, not a resolved date.
+
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
         });
@@ -461,12 +465,17 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
+        
         const newQuestion: QuestionWrite = {
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp()
+            submittedAt: serverTimestamp() // This returns FieldValue
         };
+        console.log("Submitting Question:", JSON.stringify(newQuestion, null, 2));
+         // Note: serverTimestamp() will appear as a function or special object in console, not a resolved date.
+
+
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
         });
@@ -634,10 +643,10 @@ export default function SessionPage() {
         )}
 
         <div className={cn(
-            "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
+            "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-4 items-start"
         )}>
             
-            <section className={cn("space-y-4", leftColSpan)}>
+             <section className={cn("space-y-4", isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7")}>
                 {!isCurrentUserAdmin && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
@@ -666,32 +675,10 @@ export default function SessionPage() {
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                 />
-
-                 {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
-                    <Card className="w-full shadow-md">
-                        <CardHeader>
-                            <CardTitle className="text-xl flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary" />Submit Key Takeaway</CardTitle>
-                            <CardDescription>What's the most important point you'll remember? (Max {MAX_TAKEAWAY_LENGTH} chars)</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <Textarea
-                                value={takeawayInput}
-                                onChange={(e) => setTakeawayInput(e.target.value.slice(0, MAX_TAKEAWAY_LENGTH))}
-                                placeholder="Enter your key takeaway..."
-                                maxLength={MAX_TAKEAWAY_LENGTH}
-                                rows={3}
-                                disabled={isSubmittingTakeaway || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}
-                            />
-                            <Button onClick={handleSubmitTakeaway} className="w-full" disabled={isSubmittingTakeaway || !takeawayInput.trim() || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}>
-                                {isSubmittingTakeaway ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Takeaway</>}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
             </section>
 
             
-            <section className={cn("space-y-4", rightColSpan)}>
+            <section className={cn("space-y-4", isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5")}>
                  {(participantList.length > 0 || isCurrentUserAdmin) && (
                     <Card className="w-full shadow-lg">
                         <CardHeader>
@@ -713,6 +700,28 @@ export default function SessionPage() {
                     </Card>
                 )}
                 
+                {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
+                    <Card className="w-full shadow-md">
+                        <CardHeader>
+                            <CardTitle className="text-xl flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary" />Submit Key Takeaway</CardTitle>
+                            <CardDescription>What's the most important point you'll remember? (Max {MAX_TAKEAWAY_LENGTH} chars)</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <Textarea
+                                value={takeawayInput}
+                                onChange={(e) => setTakeawayInput(e.target.value.slice(0, MAX_TAKEAWAY_LENGTH))}
+                                placeholder="Enter your key takeaway..."
+                                maxLength={MAX_TAKEAWAY_LENGTH}
+                                rows={3}
+                                disabled={isSubmittingTakeaway || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}
+                            />
+                            <Button onClick={handleSubmitTakeaway} className="w-full" disabled={isSubmittingTakeaway || !takeawayInput.trim() || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}>
+                                {isSubmittingTakeaway ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Takeaway</>}
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
                 {!isCurrentUserAdmin && sessionData.qnaEnabled && (
                      <Card className="w-full shadow-md">
                         <CardHeader>
@@ -1067,5 +1076,6 @@ export default function SessionPage() {
     </main>
   );
 }
+
 
     
