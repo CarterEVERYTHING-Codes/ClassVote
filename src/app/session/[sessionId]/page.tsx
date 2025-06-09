@@ -293,15 +293,15 @@ export default function SessionPage() {
   }
 
  const executeEndSession = async () => {
-    setIsProcessingAdminAction(true); // Set at the beginning
+    setIsProcessingAdminAction(true);
     try {
       if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
-        // No toast needed here if it's just a state check
         return;
       }
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
+      // setIsProcessingAdminAction(false); // Moved to finally
       router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -311,7 +311,7 @@ export default function SessionPage() {
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
     } finally {
       setIsProcessingAdminAction(false);
-      setShowEndSessionDialog(false); // Ensure dialog is closed
+      setShowEndSessionDialog(false);
     }
   };
 
@@ -597,7 +597,7 @@ export default function SessionPage() {
             {/* Left Column */}
             <section className={cn(
                 "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-6" : "md:col-span-8"
+                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" // Adjusted for better balance
             )}>
                 {!isCurrentUserAdmin && !sessionData.sessionEnded && (
                     <Card className="w-full shadow-md">
@@ -627,6 +627,33 @@ export default function SessionPage() {
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                 />
+            </section>
+
+            {/* Right Column */}
+            <section className={cn(
+                "space-y-4",
+                isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5" // Adjusted for better balance
+            )}>
+                {(participantList.length > 0 || isCurrentUserAdmin) && (
+                    <Card className="w-full shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-xl font-bold flex items-center justify-center">
+                            <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <ScrollArea className="h-40">
+                            <ul className="space-y-1">
+                                {participantList.map(p => (
+                                <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                                    {p.nickname || 'Anonymous User'}
+                                </li>
+                                ))}
+                            </ul>
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {!isCurrentUserAdmin && !sessionData.sessionEnded && sessionData.keyTakeawaysEnabled && (
                     <Card className="w-full shadow-md">
@@ -668,33 +695,6 @@ export default function SessionPage() {
                             <Button onClick={handleSubmitQuestion} className="w-full" disabled={isSubmittingQuestion || !questionInput.trim() || !feedbackSubmissionAllowed || !sessionData.qnaEnabled}>
                                 {isSubmittingQuestion ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Question</>}
                             </Button>
-                        </CardContent>
-                    </Card>
-                )}
-            </section>
-
-            {/* Right Column */}
-            <section className={cn(
-                "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-6" : "md:col-span-4"
-            )}>
-                {(participantList.length > 0 || isCurrentUserAdmin) && (
-                    <Card className="w-full shadow-lg">
-                        <CardHeader>
-                            <CardTitle className="text-xl font-bold flex items-center justify-center">
-                            <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <ScrollArea className="h-40">
-                            <ul className="space-y-1">
-                                {participantList.map(p => (
-                                <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
-                                    {p.nickname || 'Anonymous User'}
-                                </li>
-                                ))}
-                            </ul>
-                            </ScrollArea>
                         </CardContent>
                     </Card>
                 )}
@@ -923,7 +923,6 @@ export default function SessionPage() {
                         </CardContent>
                     </Card>
 
-                    {/* Key Takeaways Display for Admin */}
                     <Card className="w-full shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-xl font-bold flex items-center justify-center">
@@ -952,7 +951,6 @@ export default function SessionPage() {
                         </CardContent>
                     </Card>
 
-                    {/* Q&A Questions Display for Admin */}
                     <Card className="w-full shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-xl font-bold flex items-center justify-center">
@@ -1033,3 +1031,5 @@ export default function SessionPage() {
     </main>
   );
 }
+
+    
