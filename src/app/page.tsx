@@ -57,10 +57,6 @@ export default function HomePage() {
         presenterQueue: [],
         currentPresenterIndex: -1,
         currentPresenterName: "",
-        keyTakeawaysEnabled: false,
-        qnaEnabled: false,
-        keyTakeaways: [],
-        questions: [],
       });
       toast({ title: "Quick Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
@@ -201,3 +197,5 @@ export default function HomePage() {
     </main>
   );
 }
+
+    

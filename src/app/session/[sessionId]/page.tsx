@@ -33,8 +33,7 @@ import {
   } from "@/components/ui/accordion";
 import {
     Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, MessageSquarePlus, Lightbulb, Send, Info, UserPlusIcon,
-    FileText, MessageCircleQuestion
+    ListChecks, ChevronsRight, Send, Info, UserPlusIcon
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -47,38 +46,6 @@ import { cn } from "@/lib/utils";
 interface ParticipantData {
   nickname: string;
   joinedAt: Timestamp | FieldValue;
-}
-
-// Interface for data READ from Firestore
-interface KeyTakeaway {
-    userId: string;
-    nickname: string;
-    takeaway: string;
-    submittedAt: Timestamp; // For reading
-}
-
-// Interface for data WRITTEN to Firestore via arrayUnion
-interface KeyTakeawayWrite {
-    userId: string;
-    nickname: string;
-    takeaway: string;
-    submittedAt: FieldValue; // For writing
-}
-
-// Interface for data READ from Firestore
-interface Question {
-    userId: string;
-    nickname: string;
-    questionText: string;
-    submittedAt: Timestamp; // For reading
-}
-
-// Interface for data WRITTEN to Firestore via arrayUnion
-interface QuestionWrite {
-    userId: string;
-    nickname: string;
-    questionText: string;
-    submittedAt: FieldValue; // For writing
 }
 
 interface SessionData {
@@ -95,14 +62,7 @@ interface SessionData {
   currentPresenterIndex?: number;
   currentPresenterName?: string;
   sessionType?: string;
-  keyTakeawaysEnabled?: boolean;
-  qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[]; // Array of read types
-  questions?: Question[]; // Array of read types
 }
-
-const MAX_TAKEAWAY_LENGTH = 280;
-const MAX_QUESTION_LENGTH = 500;
 
 export default function SessionPage() {
   const params = useParams();
@@ -120,11 +80,6 @@ export default function SessionPage() {
   const [nicknameInput, setNicknameInput] = useState('');
   const [isSavingNickname, setIsSavingNickname] = useState(false);
   const [presenterQueueInput, setPresenterQueueInput] = useState('');
-
-  const [takeawayInput, setTakeawayInput] = useState('');
-  const [isSubmittingTakeaway, setIsSubmittingTakeaway] = useState(false);
-  const [questionInput, setQuestionInput] = useState('');
-  const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false);
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
 
   useEffect(() => {
@@ -282,26 +237,6 @@ export default function SessionPage() {
       "Could not toggle results visibility."
     );
 
-  const handleToggleKeyTakeaways = () =>
-    handleAdminAction(
-      async () => {
-        const sessionDocRef = doc(db, 'sessions', sessionId);
-        await updateDoc(sessionDocRef, { keyTakeawaysEnabled: !sessionData!.keyTakeawaysEnabled });
-      },
-      `Key Takeaway submissions are now ${!sessionData!.keyTakeawaysEnabled ? 'ENABLED' : 'DISABLED'}.`,
-      "Could not toggle Key Takeaway status."
-    );
-
-  const handleToggleQnA = () =>
-    handleAdminAction(
-      async () => {
-        const sessionDocRef = doc(db, 'sessions', sessionId);
-        await updateDoc(sessionDocRef, { qnaEnabled: !sessionData!.qnaEnabled });
-      },
-      `Q&A submissions are now ${!sessionData!.qnaEnabled ? 'ENABLED' : 'DISABLED'}.`,
-      "Could not toggle Q&A status."
-    );
-
   const triggerEndSessionDialog = () => {
     if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
       return;
@@ -416,83 +351,6 @@ export default function SessionPage() {
 
   const canSubmitFeedbackGeneric = sessionData?.isRoundActive === true && !sessionData?.sessionEnded;
   const feedbackSubmissionAllowed = canSubmitFeedbackGeneric && (isPresenterQueueEffectivelyEmpty || isSpecificPresenterActive);
-
-
-  const handleSubmitTakeaway = async () => {
-    if (!currentUser || !takeawayInput.trim() || !sessionData || !sessionData.keyTakeawaysEnabled || !feedbackSubmissionAllowed) {
-        toast({ title: "Cannot submit takeaway", description: "Submission is not allowed at this time.", variant: "destructive" });
-        return;
-    }
-    setIsSubmittingTakeaway(true);
-    try {
-        const sessionDocRef = doc(db, 'sessions', sessionId);
-        const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-
-        // Construct a plain object literal for arrayUnion
-        const takeawayToAdd = {
-            userId: currentUser.uid,
-            nickname: userNickname,
-            takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() // FieldValue sentinel
-        };
-
-        console.log("Submitting Key Takeaway Object (raw literal):", takeawayToAdd);
-
-        await updateDoc(sessionDocRef, {
-            keyTakeaways: arrayUnion(takeawayToAdd)
-        });
-        toast({ title: "Takeaway Submitted!", description: "Your key takeaway has been recorded." });
-        setTakeawayInput('');
-    } catch (error) {
-        console.error("Error submitting takeaway:", error);
-        let description = "Could not submit takeaway. Please try again.";
-        if (error instanceof FirestoreError) {
-            description = `Error: ${error.message} (Code: ${error.code})`;
-        } else if (error instanceof Error) {
-            description = `Error: ${error.message}`;
-        }
-        toast({ title: "Submission Failed", description, variant: "destructive" });
-    }
-    setIsSubmittingTakeaway(false);
-  };
-
-  const handleSubmitQuestion = async () => {
-    if (!currentUser || !questionInput.trim() || !sessionData || !sessionData.qnaEnabled || !feedbackSubmissionAllowed ) {
-        toast({ title: "Cannot submit question", description: "Submission is not allowed at this time.", variant: "destructive" });
-        return;
-    }
-    setIsSubmittingQuestion(true);
-    try {
-        const sessionDocRef = doc(db, 'sessions', sessionId);
-        const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-
-        // Construct a plain object literal for arrayUnion
-        const questionToAdd = {
-            userId: currentUser.uid,
-            nickname: userNickname,
-            questionText: questionInput.trim(),
-            submittedAt: serverTimestamp() // FieldValue sentinel
-        };
-
-        console.log("Submitting Question Object (raw literal):", questionToAdd);
-
-        await updateDoc(sessionDocRef, {
-            questions: arrayUnion(questionToAdd)
-        });
-        toast({ title: "Question Submitted!", description: "Your question has been recorded." });
-        setQuestionInput('');
-    } catch (error) {
-        console.error("Error submitting question:", error);
-        let description = "Could not submit question. Please try again.";
-        if (error instanceof FirestoreError) {
-            description = `Error: ${error.message} (Code: ${error.code})`;
-        } else if (error instanceof Error) {
-            description = `Error: ${error.message}`;
-        }
-        toast({ title: "Submission Failed", description, variant: "destructive" });
-    }
-    setIsSubmittingQuestion(false);
-  };
 
 
   const copySessionCode = () => {
@@ -677,27 +535,6 @@ export default function SessionPage() {
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                 />
-                 {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
-                    <Card className="w-full shadow-md">
-                        <CardHeader>
-                            <CardTitle className="text-xl flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary" />Submit Key Takeaway</CardTitle>
-                            <CardDescription>What's the most important point you'll remember? (Max {MAX_TAKEAWAY_LENGTH} chars)</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <Textarea
-                                value={takeawayInput}
-                                onChange={(e) => setTakeawayInput(e.target.value.slice(0, MAX_TAKEAWAY_LENGTH))}
-                                placeholder="Enter your key takeaway..."
-                                maxLength={MAX_TAKEAWAY_LENGTH}
-                                rows={3}
-                                disabled={isSubmittingTakeaway || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}
-                            />
-                            <Button onClick={handleSubmitTakeaway} className="w-full" disabled={isSubmittingTakeaway || !takeawayInput.trim() || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}>
-                                {isSubmittingTakeaway ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Takeaway</>}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
             </section>
 
             <section className={cn(
@@ -724,29 +561,6 @@ export default function SessionPage() {
                         </CardContent>
                     </Card>
                 )}
-
-                {!isCurrentUserAdmin && sessionData.qnaEnabled && (
-                     <Card className="w-full shadow-md">
-                        <CardHeader>
-                            <CardTitle className="text-xl flex items-center"><MessageSquarePlus className="mr-2 h-5 w-5 text-primary" />Ask a Question</CardTitle>
-                            <CardDescription>Submit a question. (Max {MAX_QUESTION_LENGTH} chars)</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <Textarea
-                                value={questionInput}
-                                onChange={(e) => setQuestionInput(e.target.value.slice(0, MAX_QUESTION_LENGTH))}
-                                placeholder="Enter your question..."
-                                maxLength={MAX_QUESTION_LENGTH}
-                                rows={3}
-                                disabled={isSubmittingQuestion || !feedbackSubmissionAllowed || !sessionData.qnaEnabled || sessionData.sessionEnded}
-                            />
-                            <Button onClick={handleSubmitQuestion} className="w-full" disabled={isSubmittingQuestion || !questionInput.trim() || !feedbackSubmissionAllowed || !sessionData.qnaEnabled || sessionData.sessionEnded}>
-                                {isSubmittingQuestion ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Question</>}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
-
 
                 {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
                   <>
@@ -918,42 +732,6 @@ export default function SessionPage() {
                                                 </Tooltip>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
-                                            <Label htmlFor="key-takeaways-enabled" className="flex items-center text-sm">
-                                                {sessionData.keyTakeawaysEnabled ? <Lightbulb className="mr-2 h-5 w-5 text-yellow-500" /> : <Lightbulb className="mr-2 h-5 w-5" />}
-                                                Key Takeaways
-                                            </Label>
-                                            <div className="flex items-center">
-                                                <Switch
-                                                    id="key-takeaways-enabled"
-                                                    checked={sessionData.keyTakeawaysEnabled === true}
-                                                    onCheckedChange={handleToggleKeyTakeaways}
-                                                    disabled={isProcessingAdminAction}
-                                                />
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Allow participants to submit a key takeaway. Applies when a feedback round is active.</p></TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
-                                            <Label htmlFor="qna-enabled" className="flex items-center text-sm">
-                                                {sessionData.qnaEnabled ? <MessageSquarePlus className="mr-2 h-5 w-5 text-blue-500" /> : <MessageSquarePlus className="mr-2 h-5 w-5" />}
-                                                Q&A Submissions
-                                            </Label>
-                                            <div className="flex items-center">
-                                                <Switch
-                                                    id="qna-enabled"
-                                                    checked={sessionData.qnaEnabled === true}
-                                                    onCheckedChange={handleToggleQnA}
-                                                    disabled={isProcessingAdminAction}
-                                                />
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Allow participants to submit questions. Applies when a feedback round is active.</p></TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                        </div>
                                     </AccordionContent>
                                 </AccordionItem>
                             </Accordion>
@@ -969,62 +747,6 @@ export default function SessionPage() {
                                     </Tooltip>
                                 </div>
                             </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="w-full shadow-lg">
-                        <CardHeader>
-                            <CardTitle className="text-xl font-bold flex items-center justify-center">
-                                <FileText className="mr-2 h-5 w-5" /> Key Takeaways
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {!sessionData.keyTakeawaysEnabled ? (
-                                <p className="text-sm text-muted-foreground text-center">Key takeaway submissions are currently disabled.</p>
-                            ) : (sessionData.keyTakeaways && sessionData.keyTakeaways.length > 0) ? (
-                                <ScrollArea className="h-60">
-                                    <ul className="space-y-3">
-                                        {sessionData.keyTakeaways.sort((a,b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)).map((item, index) => (
-                                            <li key={index} className="p-3 border rounded-md bg-muted/30 dark:bg-muted/50">
-                                                <p className="text-sm break-words">{item.takeaway}</p>
-                                                <p className="text-xs text-muted-foreground mt-1">
-                                                    - {item.nickname} ({item.submittedAt ? formatDistanceToNow(item.submittedAt.toDate(), { addSuffix: true }) : 'just now'})
-                                                </p>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </ScrollArea>
-                            ) : (
-                                <p className="text-sm text-muted-foreground text-center">No key takeaways submitted yet.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    <Card className="w-full shadow-lg">
-                        <CardHeader>
-                            <CardTitle className="text-xl font-bold flex items-center justify-center">
-                                <MessageCircleQuestion className="mr-2 h-5 w-5" /> Questions
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {!sessionData.qnaEnabled ? (
-                                <p className="text-sm text-muted-foreground text-center">Q&A submissions are currently disabled.</p>
-                            ) : (sessionData.questions && sessionData.questions.length > 0) ? (
-                                <ScrollArea className="h-60">
-                                    <ul className="space-y-3">
-                                        {sessionData.questions.sort((a,b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)).map((item, index) => (
-                                            <li key={index} className="p-3 border rounded-md bg-muted/30 dark:bg-muted/50">
-                                                <p className="text-sm break-words">{item.questionText}</p>
-                                                <p className="text-xs text-muted-foreground mt-1">
-                                                    - {item.nickname} ({item.submittedAt ? formatDistanceToNow(item.submittedAt.toDate(), { addSuffix: true }) : 'just now'})
-                                                </p>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </ScrollArea>
-                            ) : (
-                                <p className="text-sm text-muted-foreground text-center">No questions submitted yet.</p>
-                            )}
                         </CardContent>
                     </Card>
                   </>
@@ -1079,3 +801,5 @@ export default function SessionPage() {
     </main>
   );
 }
+
+    
