@@ -52,22 +52,23 @@ export default function SessionPage() {
   const [nicknameInput, setNicknameInput] = useState('');
   const [isSavingNickname, setIsSavingNickname] = useState(false);
 
+  // Effect for Firebase Authentication state changes
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
-      // Pre-fill nickname input if user has one and sessionData is loaded
-      if (user && sessionData?.participants?.[user.uid]?.nickname) {
-        setNicknameInput(sessionData.participants[user.uid].nickname);
+      if (!user) { // If user logs out or becomes null
+        setNicknameInput(''); // Clear the nickname input
       }
     });
     return () => unsubscribeAuth();
-  }, [sessionData]); // Re-check nickname if sessionData updates
+  }, []); // Runs once on mount
 
+  // Effect for fetching and subscribing to Firestore session data
   useEffect(() => {
     if (!sessionId) {
       setIsLoading(false);
       setError("No session ID provided.");
-      router.push('/'); // Redirect if no session ID
+      router.push('/'); 
       return;
     }
 
@@ -77,10 +78,8 @@ export default function SessionPage() {
       setIsLoading(false);
       if (docSnap.exists()) {
         const data = docSnap.data() as SessionData;
-        setSessionData(data);
-        if (currentUser && data.participants?.[currentUser.uid]?.nickname && !nicknameInput) {
-           setNicknameInput(data.participants[currentUser.uid].nickname);
-        }
+        setSessionData(data); // This will trigger re-render
+        
         if (data.sessionEnded) {
           setError("This session has ended.");
         } else {
@@ -89,7 +88,6 @@ export default function SessionPage() {
       } else {
         setSessionData(null);
         setError("This session cannot be found. It may have been ended or never existed.");
-        // Consider redirecting or showing a more prominent "not found" message.
       }
     }, (err) => {
       console.error("Error fetching session data: ", err);
@@ -99,8 +97,21 @@ export default function SessionPage() {
     });
 
     return () => unsubscribeFirestore();
-  }, [sessionId, toast, currentUser, nicknameInput, router]);
+  }, [sessionId, toast, router]); // Removed currentUser and nicknameInput from dependencies
 
+  // Effect to pre-fill nicknameInput based on sessionData and currentUser
+  useEffect(() => {
+    if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname) {
+      // Only pre-fill if the input field is currently empty.
+      // This avoids overwriting user input if they've already started typing or modified it.
+      if (nicknameInput === '') {
+        setNicknameInput(sessionData.participants[currentUser.uid].nickname);
+      }
+    }
+    // Note: If user logs out, the onAuthStateChanged effect clears nicknameInput.
+  }, [currentUser, sessionData]); // No nicknameInput in this dependency array
+
+  // Effect to determine if the current user is the admin
   useEffect(() => {
     if (currentUser && sessionData) {
       setIsCurrentUserAdmin(currentUser.uid === sessionData.adminUid);
@@ -150,8 +161,6 @@ export default function SessionPage() {
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         await updateDoc(sessionDocRef, { isRoundActive: !sessionData!.isRoundActive });
-        // Clear vote status for all potential participants when round changes
-        // This is a client-side convention, not a guarantee for all browsers/devices
         if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
       },
       `Feedback round is now ${!sessionData!.isRoundActive ? 'OPEN' : 'CLOSED'}. Player votes reset.`,
@@ -205,7 +214,7 @@ export default function SessionPage() {
       else if (error instanceof Error) errorMessage = `Could not end session: ${error.message}`;
       console.error("Error ending session details: ", error);
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
-      setIsProcessingAdminAction(false); // Only set to false on error so redirect can happen
+      setIsProcessingAdminAction(false); 
     }
   };
 
@@ -244,7 +253,7 @@ export default function SessionPage() {
     );
   }
   
-  if (!sessionData) { // Should be caught by the error block above if session not found.
+  if (!sessionData) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <p className="text-lg text-muted-foreground">Session data is currently unavailable.</p>
@@ -409,3 +418,4 @@ export default function SessionPage() {
   );
 }
 
+    
