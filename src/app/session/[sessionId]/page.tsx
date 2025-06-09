@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -92,12 +93,14 @@ export default function SessionPage() {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (!user) {
+        // If user logs out or auth state is lost, clear nickname input
         setNicknameInput('');
       }
     });
     return () => unsubscribeAuth();
   }, []);
 
+  // Effect for Firestore subscription
   useEffect(() => {
     if (!sessionId) {
       setIsLoading(false);
@@ -114,7 +117,8 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
-        if (data.presenterQueue && presenterQueueInput === '' && (!data.sessionEnded)) {
+        // Pre-fill presenter queue input if it's empty and data exists (only if not ended)
+        if (data.presenterQueue && presenterQueueInput === '' && !data.sessionEnded) {
            setPresenterQueueInput(data.presenterQueue.join('\n'));
         }
 
@@ -135,16 +139,18 @@ export default function SessionPage() {
     });
 
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast]);
+  }, [sessionId, router, toast]); // Removed nicknameInput from dependencies
 
 
+  // Effect for pre-filling nicknameInput based on currentUser and sessionData
   useEffect(() => {
     if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname) {
+      // Only pre-fill if nicknameInput is currently empty to avoid overwriting user typing
       if (nicknameInput === '') {
         setNicknameInput(sessionData.participants[currentUser.uid].nickname);
       }
     }
-  }, [currentUser, sessionData, nicknameInput]);
+  }, [currentUser, sessionData]); // Removed nicknameInput
 
 
   useEffect(() => {
@@ -256,8 +262,12 @@ export default function SessionPage() {
     );
 
   const handleEndSession = async () => {
-    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) return;
-    if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) return;
+    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
+      return;
+    }
+    if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) {
+      return;
+    }
 
     setIsProcessingAdminAction(true);
     try {
@@ -266,12 +276,13 @@ export default function SessionPage() {
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
       router.push('/');
     } catch (error) {
+      console.error("Error ending session details: ", error);
       let errorMessage = "Could not end session. Please try again.";
       if (error instanceof FirebaseError) errorMessage = `Could not end session: ${error.message} (Code: ${error.code})`;
       else if (error instanceof Error) errorMessage = `Could not end session: ${error.message}`;
-      console.error("Error ending session details: ", error);
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
-      setIsProcessingAdminAction(false);
+    } finally {
+      setIsProcessingAdminAction(false); 
     }
   };
 
@@ -310,7 +321,7 @@ export default function SessionPage() {
 
             if (newIndex >= sessionData.presenterQueue.length) {
                 toast({ title: "End of Queue", description: "You have reached the end of the presenter list. Round closed.", variant: "default" });
-                await updateDoc(doc(db, 'sessions', sessionId), { isRoundActive: false, currentPresenterName: "End of Queue" });
+                await updateDoc(doc(db, 'sessions', sessionId), { isRoundActive: false, currentPresenterName: "End of Queue" }); // Also set name to indicate end
                 return;
             }
 
@@ -341,7 +352,7 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() as Timestamp // Cast to Timestamp for type safety
+            submittedAt: serverTimestamp() as Timestamp 
         };
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
@@ -368,7 +379,7 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp() as Timestamp // Cast to Timestamp for type safety
+            submittedAt: serverTimestamp() as Timestamp 
         };
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -780,3 +791,5 @@ export default function SessionPage() {
     </main>
   );
 }
+
+    
