@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -47,7 +48,7 @@ export default function HomePage() {
         isRoundActive: true,
         likeClicks: 0,
         dislikeClicks: 0,
-        createdAt: serverTimestamp(), // Use serverTimestamp for consistency
+        createdAt: serverTimestamp(),
         sessionEnded: false,
         soundsEnabled: true,
         resultsVisible: true,
@@ -56,6 +57,10 @@ export default function HomePage() {
         presenterQueue: [],
         currentPresenterIndex: -1,
         currentPresenterName: "",
+        keyTakeawaysEnabled: false,
+        qnaEnabled: false,
+        keyTakeaways: [],
+        questions: [],
       });
       toast({ title: "Quick Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
@@ -69,7 +74,7 @@ export default function HomePage() {
   const handleCreateWithAccountPlaceholder = () => {
     toast({
       title: "Coming Soon!",
-      description: "Account-based sessions with full features are under development. Please use 'Quick Session' for now.",
+      description: "Account-based sessions with full features are under development. Please use 'Quick Start' for now.",
       duration: 5000,
     });
   };
@@ -117,7 +122,7 @@ export default function HomePage() {
             height={80}
             priority
             data-ai-hint="logo abstract"
-            className="self-center" 
+            className="self-center"
           />
           <p className="text-lg sm:text-xl text-muted-foreground mt-4">
             Rate presentations and provide feedback in real-time!

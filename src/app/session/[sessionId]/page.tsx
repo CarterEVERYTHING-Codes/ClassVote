@@ -1,9 +1,8 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -15,14 +14,33 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff, ListChecks, ChevronsRight } from 'lucide-react';
+import {
+    Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
+    ListChecks, ChevronsRight, MessageSquarePlus, Lightbulb, HelpCircle, Send, Info
+} from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FirebaseError } from 'firebase/app';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 interface ParticipantData {
   nickname: string;
   joinedAt: Timestamp | any;
+}
+
+interface KeyTakeaway {
+    userId: string;
+    nickname: string;
+    takeaway: string;
+    submittedAt: Timestamp;
+}
+
+interface Question {
+    userId: string;
+    nickname: string;
+    questionText: string;
+    submittedAt: Timestamp;
 }
 
 interface SessionData {
@@ -39,7 +57,14 @@ interface SessionData {
   currentPresenterIndex?: number;
   currentPresenterName?: string;
   sessionType?: string;
+  keyTakeawaysEnabled?: boolean;
+  qnaEnabled?: boolean;
+  keyTakeaways?: KeyTakeaway[];
+  questions?: Question[];
 }
+
+const MAX_TAKEAWAY_LENGTH = 280;
+const MAX_QUESTION_LENGTH = 500;
 
 export default function SessionPage() {
   const params = useParams();
@@ -58,11 +83,16 @@ export default function SessionPage() {
   const [isSavingNickname, setIsSavingNickname] = useState(false);
   const [presenterQueueInput, setPresenterQueueInput] = useState('');
 
+  const [takeawayInput, setTakeawayInput] = useState('');
+  const [isSubmittingTakeaway, setIsSubmittingTakeaway] = useState(false);
+  const [questionInput, setQuestionInput] = useState('');
+  const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false);
+
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (!user) {
-        setNicknameInput(''); // Clear nickname if user logs out or changes
+        setNicknameInput('');
       }
     });
     return () => unsubscribeAuth();
@@ -83,9 +113,8 @@ export default function SessionPage() {
       if (docSnap.exists()) {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
-        
-        // Initialize presenterQueueInput only if it's empty and data.presenterQueue exists
-        if (data.presenterQueue && presenterQueueInput === '') {
+
+        if (data.presenterQueue && presenterQueueInput === '' && (!data.sessionEnded)) {
            setPresenterQueueInput(data.presenterQueue.join('\n'));
         }
 
@@ -106,17 +135,16 @@ export default function SessionPage() {
     });
 
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast]); // Removed presenterQueueInput from dependencies
+  }, [sessionId, router, toast]);
 
 
   useEffect(() => {
-    // Effect to pre-fill nicknameInput if it's empty and a nickname exists
     if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname) {
-      if (nicknameInput === '') { 
+      if (nicknameInput === '') {
         setNicknameInput(sessionData.participants[currentUser.uid].nickname);
       }
     }
-  }, [currentUser, sessionData, nicknameInput]); // nicknameInput included here to re-evaluate if it becomes empty
+  }, [currentUser, sessionData, nicknameInput]);
 
 
   useEffect(() => {
@@ -158,7 +186,9 @@ export default function SessionPage() {
       toast({ title: "Admin Action Successful", description: successMessage });
     } catch (error) {
       console.error(`Error during admin action (${successMessage}): `, error);
-      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+      let displayError = errorMessage;
+      if (error instanceof FirebaseError) displayError = `${errorMessage} (Code: ${error.code})`;
+      toast({ title: "Error", description: displayError, variant: "destructive" });
     }
     setIsProcessingAdminAction(false);
   };
@@ -203,6 +233,26 @@ export default function SessionPage() {
       },
       `Live results are now ${!sessionData!.resultsVisible ? 'VISIBLE' : 'HIDDEN'}.`,
       "Could not toggle results visibility."
+    );
+
+  const handleToggleKeyTakeaways = () =>
+    handleAdminAction(
+      async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, { keyTakeawaysEnabled: !sessionData!.keyTakeawaysEnabled });
+      },
+      `Key Takeaway submissions are now ${!sessionData!.keyTakeawaysEnabled ? 'ENABLED' : 'DISABLED'}.`,
+      "Could not toggle Key Takeaway status."
+    );
+
+  const handleToggleQnA = () =>
+    handleAdminAction(
+      async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, { qnaEnabled: !sessionData!.qnaEnabled });
+      },
+      `Q&A submissions are now ${!sessionData!.qnaEnabled ? 'ENABLED' : 'DISABLED'}.`,
+      "Could not toggle Q&A status."
     );
 
   const handleEndSession = async () => {
@@ -259,10 +309,7 @@ export default function SessionPage() {
             const newIndex = currentIndex + 1;
 
             if (newIndex >= sessionData.presenterQueue.length) {
-                toast({ title: "End of Queue", description: "You have reached the end of the presenter list. Scores retained from last presenter.", variant: "default" });
-                // Optionally, admin might want to explicitly stop the round or clear scores here.
-                // For now, we just indicate end of queue and keep round active with last scores if admin wants to discuss.
-                // Or, to be safer and clearer:
+                toast({ title: "End of Queue", description: "You have reached the end of the presenter list. Round closed.", variant: "default" });
                 await updateDoc(doc(db, 'sessions', sessionId), { isRoundActive: false, currentPresenterName: "End of Queue" });
                 return;
             }
@@ -280,6 +327,60 @@ export default function SessionPage() {
         "Advanced to the next presenter. Scores reset and round started.",
         "Could not advance to the next presenter."
     );
+
+  const handleSubmitTakeaway = async () => {
+    if (!currentUser || !takeawayInput.trim() || !sessionData || sessionData.sessionEnded || !sessionData.keyTakeawaysEnabled || !sessionData.isRoundActive || isQueueEffectivelyEmpty || sessionData.currentPresenterIndex === -1 || sessionData.currentPresenterName === "End of Queue") {
+        toast({ title: "Cannot submit takeaway", description: "Submission is not allowed at this time.", variant: "destructive" });
+        return;
+    }
+    setIsSubmittingTakeaway(true);
+    try {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
+        const newTakeaway: KeyTakeaway = {
+            userId: currentUser.uid,
+            nickname: userNickname,
+            takeaway: takeawayInput.trim(),
+            submittedAt: serverTimestamp() as Timestamp // Cast to Timestamp for type safety
+        };
+        await updateDoc(sessionDocRef, {
+            keyTakeaways: arrayUnion(newTakeaway)
+        });
+        toast({ title: "Takeaway Submitted!", description: "Your key takeaway has been recorded." });
+        setTakeawayInput('');
+    } catch (error) {
+        console.error("Error submitting takeaway: ", error);
+        toast({ title: "Error", description: "Could not submit takeaway.", variant: "destructive" });
+    }
+    setIsSubmittingTakeaway(false);
+  };
+
+  const handleSubmitQuestion = async () => {
+    if (!currentUser || !questionInput.trim() || !sessionData || sessionData.sessionEnded || !sessionData.qnaEnabled || !sessionData.isRoundActive || isQueueEffectivelyEmpty || sessionData.currentPresenterIndex === -1 || sessionData.currentPresenterName === "End of Queue") {
+        toast({ title: "Cannot submit question", description: "Submission is not allowed at this time.", variant: "destructive" });
+        return;
+    }
+    setIsSubmittingQuestion(true);
+    try {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
+        const newQuestion: Question = {
+            userId: currentUser.uid,
+            nickname: userNickname,
+            questionText: questionInput.trim(),
+            submittedAt: serverTimestamp() as Timestamp // Cast to Timestamp for type safety
+        };
+        await updateDoc(sessionDocRef, {
+            questions: arrayUnion(newQuestion)
+        });
+        toast({ title: "Question Submitted!", description: "Your question has been recorded." });
+        setQuestionInput('');
+    } catch (error) {
+        console.error("Error submitting question: ", error);
+        toast({ title: "Error", description: "Could not submit question.", variant: "destructive" });
+    }
+    setIsSubmittingQuestion(false);
+  };
 
 
   const copySessionCode = () => {
@@ -336,217 +437,346 @@ export default function SessionPage() {
         return timeA - timeB;
     });
 
-  const currentPresenterDisplayName = sessionData.currentPresenterName || "N/A (Setup Presenter List)";
   const isQueueAtEnd = sessionData.presenterQueue && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >= sessionData.presenterQueue.length -1;
   const isQueueEffectivelyEmpty = !sessionData.presenterQueue || sessionData.presenterQueue.length === 0;
+  const isActivePresenter = !isQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >=0 && sessionData.currentPresenterName !== "End of Queue";
 
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-6 sm:p-12 md:p-16 bg-background space-y-8">
-      <div className="text-center">
-        <div className="flex items-center justify-center mb-1">
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline font-bold text-foreground">
-            Session: {sessionId}
-          </h1>
-          <Button onClick={copySessionCode} variant="ghost" size="icon" className="ml-2 text-muted-foreground hover:text-foreground">
-            <Copy className="h-5 w-5" />
-          </Button>
+      <TooltipProvider>
+        <div className="text-center">
+            <div className="flex items-center justify-center mb-1">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline font-bold text-foreground">
+                Session: {sessionId}
+            </h1>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button onClick={copySessionCode} variant="ghost" size="icon" className="ml-2 text-muted-foreground hover:text-foreground">
+                        <Copy className="h-5 w-5" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>Copy Session Code</p></TooltipContent>
+            </Tooltip>
+            </div>
+            {sessionData.currentPresenterName && sessionData.currentPresenterName !== "End of Queue" && (
+                <p className="text-2xl font-semibold text-accent">Now Presenting: {sessionData.currentPresenterName}</p>
+            )}
+            {sessionData.currentPresenterName === "End of Queue" && (
+                <p className="text-2xl font-semibold text-muted-foreground">Presenter queue finished.</p>
+            )}
+            {(isQueueEffectivelyEmpty || sessionData.currentPresenterIndex === -1) && !isCurrentUserAdmin && (
+                <p className="text-xl font-semibold text-muted-foreground">Waiting for admin to start presentations...</p>
+            )}
+            {(isQueueEffectivelyEmpty || sessionData.currentPresenterIndex === -1) && isCurrentUserAdmin && (
+                <p className="text-xl font-semibold text-muted-foreground">Please set up the presenter list below to begin.</p>
+            )}
+            <p className="text-lg sm:text-xl text-muted-foreground mt-1">
+            {sessionData.isRoundActive && isActivePresenter ? "Feedback round is OPEN. " : "Feedback round is CLOSED. "}
+            {!sessionData.sessionEnded && isActivePresenter && "Cast your vote, submit takeaways, or ask questions!"}
+            </p>
         </div>
-        {sessionData.currentPresenterName && sessionData.currentPresenterName !== "End of Queue" && (
-            <p className="text-2xl font-semibold text-accent">Now Presenting: {sessionData.currentPresenterName}</p>
-        )}
-        {sessionData.currentPresenterName === "End of Queue" && (
-             <p className="text-2xl font-semibold text-muted-foreground">Presenter queue finished.</p>
-        )}
-        {(isQueueEffectivelyEmpty || sessionData.currentPresenterIndex === -1) && !isCurrentUserAdmin && (
-             <p className="text-xl font-semibold text-muted-foreground">Waiting for admin to start presentations...</p>
-        )}
-         {(isQueueEffectivelyEmpty || sessionData.currentPresenterIndex === -1) && isCurrentUserAdmin && (
-             <p className="text-xl font-semibold text-muted-foreground">Please set up the presenter list below to begin.</p>
-        )}
-        <p className="text-lg sm:text-xl text-muted-foreground mt-1">
-          {sessionData.isRoundActive ? "Feedback round is OPEN. " : "Feedback round is CLOSED. "}
-          {!sessionData.sessionEnded && "Cast your vote!"}
-        </p>
-      </div>
 
-      {!isCurrentUserAdmin && !sessionData.sessionEnded && (
-        <Card className="w-full max-w-md shadow-md">
-          <CardHeader>
-            <CardTitle className="text-xl">Set Your Nickname</CardTitle>
-            <CardDescription>This will be shown to others in the session.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center space-x-2">
-            <Input
-              type="text"
-              value={nicknameInput}
-              onChange={(e) => setNicknameInput(e.target.value)}
-              placeholder="Enter your nickname"
-              maxLength={25}
-              disabled={isSavingNickname || sessionData.sessionEnded}
-            />
-            <Button onClick={handleSetNickname} disabled={isSavingNickname || !nicknameInput.trim() || sessionData.sessionEnded}>
-              {isSavingNickname ? 'Saving...' : 'Set'}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <Leaderboard
-        sessionId={sessionId}
-        resultsVisible={sessionData.resultsVisible}
-        currentPresenterName={sessionData.currentPresenterName}
-      />
-
-      {!sessionData.sessionEnded && (
-        <div className="mt-8">
-            <GoodBadButtonsLoader
-                sessionId={sessionId}
-                isRoundActive={sessionData.isRoundActive && !sessionData.sessionEnded && (sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >=0 && sessionData.currentPresenterName !== "End of Queue")}
-                soundsEnabled={sessionData.soundsEnabled}
-            />
-        </div>
-      )}
-
-      {participantList.length > 0 && (
-        <Card className="w-full max-w-md shadow-lg mt-8">
-          <CardHeader>
-            <CardTitle className="text-xl font-bold flex items-center justify-center">
-              <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-40">
-              <ul className="space-y-1">
-                {participantList.map(p => (
-                  <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
-                    {p.nickname || 'Anonymous User'}
-                  </li>
-                ))}
-              </ul>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      )}
-
-
-      {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
-        <Card className="w-full max-w-lg shadow-lg mt-12">
-          <CardHeader>
-            <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
-              <ShieldAlert className="mr-2 h-6 w-6" /> Admin Controls
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-3 border p-4 rounded-md">
-                <h3 className="text-lg font-semibold flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary" />Presenter List</h3>
-                <Textarea
-                    placeholder="Enter presenter names, one per line..."
-                    value={presenterQueueInput}
-                    onChange={(e) => setPresenterQueueInput(e.target.value)}
-                    rows={4}
-                    disabled={isProcessingAdminAction}
+        {!isCurrentUserAdmin && !sessionData.sessionEnded && (
+            <Card className="w-full max-w-md shadow-md">
+            <CardHeader>
+                <CardTitle className="text-xl">Set Your Nickname</CardTitle>
+                <CardDescription>This will be shown to others in the session.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center space-x-2">
+                <Input
+                type="text"
+                value={nicknameInput}
+                onChange={(e) => setNicknameInput(e.target.value)}
+                placeholder="Enter your nickname"
+                maxLength={25}
+                disabled={isSavingNickname || sessionData.sessionEnded}
                 />
-                <div className="flex flex-col sm:flex-row gap-2">
-                    <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full sm:w-auto" disabled={isProcessingAdminAction || !presenterQueueInput.trim()}>
-                        Set/Update Presenter List
-                    </Button>
-                    <Button
-                        onClick={handleNextPresenter}
-                        className="w-full sm:w-auto"
-                        disabled={isProcessingAdminAction || isQueueEffectivelyEmpty || isQueueAtEnd || sessionData.currentPresenterIndex === -1 || sessionData.currentPresenterName === "End of Queue"}
-                    >
-                        Next Presenter <ChevronsRight className="ml-2 h-4 w-4"/>
-                    </Button>
-                </div>
-                {sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                        Current: {sessionData.currentPresenterName || "N/A"} ({(sessionData.currentPresenterIndex ?? -1) + 1} of {sessionData.presenterQueue.length})
-                    </p>
-                )}
-            </div>
-
-            <div className="space-y-4 border p-4 rounded-md">
-                 <h3 className="text-lg font-semibold">General Controls</h3>
-                 <div className="text-sm text-center font-medium">
-                    Feedback Round: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>{sessionData.isRoundActive ? 'OPEN' : 'CLOSED'}</span>
-                  </div>
-                <Button 
-                    onClick={handleToggleRound} 
-                    variant="outline" 
-                    className="w-full" 
-                    disabled={isProcessingAdminAction || isQueueEffectivelyEmpty || sessionData.currentPresenterName === "End of Queue" || sessionData.currentPresenterIndex === -1}
-                >
-                  {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                  {sessionData.isRoundActive ? 'Close Feedback Round' : 'Open Feedback Round'}
+                <Button onClick={handleSetNickname} disabled={isSavingNickname || !nicknameInput.trim() || sessionData.sessionEnded}>
+                {isSavingNickname ? 'Saving...' : 'Set'}
                 </Button>
-                <Button 
-                    onClick={handleClearScores} 
-                    variant="outline" 
-                    className="w-full" 
-                    disabled={isProcessingAdminAction || isQueueEffectivelyEmpty || sessionData.currentPresenterName === "End of Queue" || sessionData.currentPresenterIndex === -1}
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" /> Clear Scores & Reset Votes
-                </Button>
+            </CardContent>
+            </Card>
+        )}
 
-                <div className="flex items-center justify-between space-x-2 pt-2 border-t mt-4 pt-4">
-                  <Label htmlFor="sounds-enabled" className="flex items-center text-sm">
-                    {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
-                    Vote Sounds
-                  </Label>
-                  <Switch
-                    id="sounds-enabled"
-                    checked={sessionData.soundsEnabled}
-                    onCheckedChange={handleToggleSounds}
-                    disabled={isProcessingAdminAction}
-                  />
-                </div>
-                <div className="flex items-center justify-between space-x-2">
-                  <Label htmlFor="results-visible" className="flex items-center text-sm">
-                    {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
-                    Live Results Visible
-                  </Label>
-                  <Switch
-                    id="results-visible"
-                    checked={sessionData.resultsVisible}
-                    onCheckedChange={handleToggleResultsVisibility}
-                    disabled={isProcessingAdminAction}
-                  />
-                </div>
+        <Leaderboard
+            sessionId={sessionId}
+            resultsVisible={sessionData.resultsVisible}
+            currentPresenterName={sessionData.currentPresenterName}
+        />
+
+        {!sessionData.sessionEnded && (
+            <div className="mt-8">
+                <GoodBadButtonsLoader
+                    sessionId={sessionId}
+                    isRoundActive={sessionData.isRoundActive && !sessionData.sessionEnded && isActivePresenter}
+                    soundsEnabled={sessionData.soundsEnabled}
+                />
             </div>
-            <Button onClick={handleEndSession} variant="destructive" className="w-full !mt-8" disabled={isProcessingAdminAction}>
-              <Trash2 className="mr-2 h-4 w-4" /> End Session
+        )}
+
+        {!isCurrentUserAdmin && !sessionData.sessionEnded && isActivePresenter && sessionData.keyTakeawaysEnabled && (
+            <Card className="w-full max-w-md shadow-md mt-6">
+                <CardHeader>
+                    <CardTitle className="text-xl flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary" />Submit Key Takeaway</CardTitle>
+                    <CardDescription>What's the most important point you'll remember? (Max {MAX_TAKEAWAY_LENGTH} chars)</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <Textarea
+                        value={takeawayInput}
+                        onChange={(e) => setTakeawayInput(e.target.value.slice(0, MAX_TAKEAWAY_LENGTH))}
+                        placeholder="Enter your key takeaway..."
+                        maxLength={MAX_TAKEAWAY_LENGTH}
+                        rows={3}
+                        disabled={isSubmittingTakeaway || !sessionData.isRoundActive || sessionData.sessionEnded}
+                    />
+                    <Button onClick={handleSubmitTakeaway} className="w-full" disabled={isSubmittingTakeaway || !takeawayInput.trim() || !sessionData.isRoundActive || sessionData.sessionEnded}>
+                        {isSubmittingTakeaway ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Takeaway</>}
+                    </Button>
+                </CardContent>
+            </Card>
+        )}
+
+        {!isCurrentUserAdmin && !sessionData.sessionEnded && isActivePresenter && sessionData.qnaEnabled && (
+            <Card className="w-full max-w-md shadow-md mt-6">
+                <CardHeader>
+                    <CardTitle className="text-xl flex items-center"><MessageSquarePlus className="mr-2 h-5 w-5 text-primary" />Ask a Question</CardTitle>
+                    <CardDescription>Submit a question for the presenter. (Max {MAX_QUESTION_LENGTH} chars)</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <Textarea
+                        value={questionInput}
+                        onChange={(e) => setQuestionInput(e.target.value.slice(0, MAX_QUESTION_LENGTH))}
+                        placeholder="Enter your question..."
+                        maxLength={MAX_QUESTION_LENGTH}
+                        rows={3}
+                        disabled={isSubmittingQuestion || !sessionData.isRoundActive || sessionData.sessionEnded}
+                    />
+                    <Button onClick={handleSubmitQuestion} className="w-full" disabled={isSubmittingQuestion || !questionInput.trim() || !sessionData.isRoundActive || sessionData.sessionEnded}>
+                        {isSubmittingQuestion ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Question</>}
+                    </Button>
+                </CardContent>
+            </Card>
+        )}
+
+
+        {participantList.length > 0 && (
+            <Card className="w-full max-w-md shadow-lg mt-8">
+            <CardHeader>
+                <CardTitle className="text-xl font-bold flex items-center justify-center">
+                <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                <ScrollArea className="h-40">
+                <ul className="space-y-1">
+                    {participantList.map(p => (
+                    <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                        {p.nickname || 'Anonymous User'}
+                    </li>
+                    ))}
+                </ul>
+                </ScrollArea>
+            </CardContent>
+            </Card>
+        )}
+
+
+        {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
+            <Card className="w-full max-w-lg shadow-lg mt-12">
+            <CardHeader>
+                <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
+                <ShieldAlert className="mr-2 h-6 w-6" /> Admin Controls
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                <div className="space-y-3 border p-4 rounded-md">
+                    <h3 className="text-lg font-semibold flex items-center">
+                        <ListChecks className="mr-2 h-5 w-5 text-primary" />Presenter List
+                        <Tooltip>
+                            <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-6 w-6"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                            <TooltipContent><p>Enter one presenter name per line. Click 'Set/Update' to apply. This will reset scores and start the round for the first presenter.</p></TooltipContent>
+                        </Tooltip>
+                    </h3>
+                    <Textarea
+                        placeholder="Enter presenter names, one per line..."
+                        value={presenterQueueInput}
+                        onChange={(e) => setPresenterQueueInput(e.target.value)}
+                        rows={4}
+                        disabled={isProcessingAdminAction}
+                    />
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full sm:w-auto" disabled={isProcessingAdminAction || !presenterQueueInput.trim()}>
+                            Set/Update Presenter List
+                        </Button>
+                         <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    onClick={handleNextPresenter}
+                                    className="w-full sm:w-auto"
+                                    disabled={isProcessingAdminAction || isQueueEffectivelyEmpty || isQueueAtEnd || sessionData.currentPresenterIndex === -1 || sessionData.currentPresenterName === "End of Queue"}
+                                >
+                                    Next Presenter <ChevronsRight className="ml-2 h-4 w-4"/>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Advance to the next presenter in the list. Scores will be reset and the feedback round will open.</p></TooltipContent>
+                        </Tooltip>
+                    </div>
+                    {sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                            Current: {sessionData.currentPresenterName || "N/A"} ({(sessionData.currentPresenterIndex ?? -1) + 1} of {sessionData.presenterQueue.length})
+                        </p>
+                    )}
+                </div>
+
+                <div className="space-y-4 border p-4 rounded-md">
+                    <h3 className="text-lg font-semibold">General Controls</h3>
+                    <div className="text-sm text-center font-medium">
+                        Feedback Round: <span className={sessionData.isRoundActive && isActivePresenter ? "text-green-500" : "text-red-500"}>
+                            {sessionData.isRoundActive && isActivePresenter ? 'OPEN' : 'CLOSED'}
+                        </span>
+                    </div>
+                    <div className="flex items-center">
+                        <Button
+                            onClick={handleToggleRound}
+                            variant="outline"
+                            className="w-full"
+                            disabled={isProcessingAdminAction || isQueueEffectivelyEmpty || sessionData.currentPresenterName === "End of Queue" || sessionData.currentPresenterIndex === -1}
+                        >
+                        {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                        {sessionData.isRoundActive ? 'Close Feedback Round' : 'Open Feedback Round'}
+                        </Button>
+                        <Tooltip>
+                            <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-8 w-8"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                            <TooltipContent><p>Open or close the feedback round for the current presenter. Closing resets participant vote status.</p></TooltipContent>
+                        </Tooltip>
+                    </div>
+                     <div className="flex items-center">
+                        <Button
+                            onClick={handleClearScores}
+                            variant="outline"
+                            className="w-full"
+                            disabled={isProcessingAdminAction || isQueueEffectivelyEmpty || sessionData.currentPresenterName === "End of Queue" || sessionData.currentPresenterIndex === -1}
+                        >
+                        <RotateCcw className="mr-2 h-4 w-4" /> Clear Scores & Reset Votes
+                        </Button>
+                        <Tooltip>
+                            <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-8 w-8"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                            <TooltipContent><p>Reset current Like/Dislike scores to zero and clear participant vote status for the current round.</p></TooltipContent>
+                        </Tooltip>
+                    </div>
+
+                    <div className="flex items-center justify-between space-x-2 pt-2 border-t mt-4 pt-4">
+                        <Label htmlFor="sounds-enabled" className="flex items-center text-sm">
+                            {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
+                            Vote Sounds
+                        </Label>
+                        <div className="flex items-center">
+                            <Switch
+                                id="sounds-enabled"
+                                checked={sessionData.soundsEnabled}
+                                onCheckedChange={handleToggleSounds}
+                                disabled={isProcessingAdminAction}
+                            />
+                            <Tooltip>
+                                <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                                <TooltipContent><p>Enable or disable sound effects for like/dislike votes for all participants.</p></TooltipContent>
+                            </Tooltip>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between space-x-2">
+                        <Label htmlFor="results-visible" className="flex items-center text-sm">
+                            {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
+                            Live Results Visible
+                        </Label>
+                         <div className="flex items-center">
+                            <Switch
+                                id="results-visible"
+                                checked={sessionData.resultsVisible}
+                                onCheckedChange={handleToggleResultsVisibility}
+                                disabled={isProcessingAdminAction}
+                            />
+                            <Tooltip>
+                                <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                                <TooltipContent><p>Show or hide the live leaderboard scores from participants.</p></TooltipContent>
+                            </Tooltip>
+                        </div>
+                    </div>
+                     <div className="flex items-center justify-between space-x-2">
+                        <Label htmlFor="key-takeaways-enabled" className="flex items-center text-sm">
+                            {sessionData.keyTakeawaysEnabled ? <Lightbulb className="mr-2 h-5 w-5 text-yellow-500" /> : <Lightbulb className="mr-2 h-5 w-5" />}
+                            Key Takeaways
+                        </Label>
+                        <div className="flex items-center">
+                            <Switch
+                                id="key-takeaways-enabled"
+                                checked={sessionData.keyTakeawaysEnabled === true}
+                                onCheckedChange={handleToggleKeyTakeaways}
+                                disabled={isProcessingAdminAction}
+                            />
+                            <Tooltip>
+                                <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                                <TooltipContent><p>Allow participants to submit a key takeaway after the presentation.</p></TooltipContent>
+                            </Tooltip>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between space-x-2">
+                        <Label htmlFor="qna-enabled" className="flex items-center text-sm">
+                            {sessionData.qnaEnabled ? <MessageSquarePlus className="mr-2 h-5 w-5 text-blue-500" /> : <MessageSquarePlus className="mr-2 h-5 w-5" />}
+                            Q&A Submissions
+                        </Label>
+                        <div className="flex items-center">
+                            <Switch
+                                id="qna-enabled"
+                                checked={sessionData.qnaEnabled === true}
+                                onCheckedChange={handleToggleQnA}
+                                disabled={isProcessingAdminAction}
+                            />
+                             <Tooltip>
+                                <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                                <TooltipContent><p>Allow participants to anonymously submit questions for the presenter.</p></TooltipContent>
+                            </Tooltip>
+                        </div>
+                    </div>
+                </div>
+                 <div className="flex items-center !mt-8">
+                    <Button onClick={handleEndSession} variant="destructive" className="w-full" disabled={isProcessingAdminAction}>
+                    <Trash2 className="mr-2 h-4 w-4" /> End Session
+                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-8 w-8"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                        <TooltipContent><p>Permanently end this session for all participants. This action cannot be undone.</p></TooltipContent>
+                    </Tooltip>
+                </div>
+            </CardContent>
+            </Card>
+        )}
+
+        {isCurrentUserAdmin && sessionData && sessionData.sessionEnded && (
+            <Card className="w-full max-w-md shadow-lg mt-12">
+            <CardHeader>
+                <CardTitle className="text-center text-xl font-bold flex items-center justify-center">
+                <ShieldAlert className="mr-2 h-6 w-6 text-destructive" /> Session Ended
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="text-center">
+                <p className="text-muted-foreground mb-4">This session has been ended.</p>
+                <Button onClick={() => router.push('/')} variant="outline"> Go to Homepage </Button>
+            </CardContent>
+            </Card>
+        )}
+
+        {!isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && !error && (
+            <Button onClick={() => router.push('/')} variant="outline" className="mt-12">
+                <Home className="mr-2 h-4 w-4" /> Leave Session
             </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {isCurrentUserAdmin && sessionData && sessionData.sessionEnded && (
-         <Card className="w-full max-w-md shadow-lg mt-12">
-          <CardHeader>
-            <CardTitle className="text-center text-xl font-bold flex items-center justify-center">
-              <ShieldAlert className="mr-2 h-6 w-6 text-destructive" /> Session Ended
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-muted-foreground mb-4">This session has been ended.</p>
-             <Button onClick={() => router.push('/')} variant="outline"> Go to Homepage </Button>
-          </CardContent>
-         </Card>
-       )}
-
-       {!isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && !error && (
-         <Button onClick={() => router.push('/')} variant="outline" className="mt-12">
-            <Home className="mr-2 h-4 w-4" /> Leave Session
-         </Button>
-       )}
-       {(!isCurrentUserAdmin && (sessionData.sessionEnded || error)) && (
-         <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
-            <Home className="mr-2 h-4 w-4" /> Go to Homepage
-        </Button>
-       )}
+        )}
+        {(!isCurrentUserAdmin && (sessionData.sessionEnded || error)) && (
+            <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
+                <Home className="mr-2 h-4 w-4" /> Go to Homepage
+            </Button>
+        )}
+      </TooltipProvider>
     </main>
   );
 }
-
-    
