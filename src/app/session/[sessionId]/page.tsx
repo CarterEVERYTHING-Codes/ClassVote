@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue, increment, getDoc, FirebaseError } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue, increment, getDoc, FirestoreError } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -54,7 +54,7 @@ interface KeyTakeaway {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: Timestamp; 
+    submittedAt: Timestamp;
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -62,7 +62,7 @@ interface KeyTakeawayWrite {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: FieldValue; 
+    submittedAt: FieldValue;
 }
 
 // Interface for data READ from Firestore
@@ -70,7 +70,7 @@ interface Question {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: Timestamp; 
+    submittedAt: Timestamp;
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -78,7 +78,7 @@ interface QuestionWrite {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: FieldValue; 
+    submittedAt: FieldValue;
 }
 
 interface SessionData {
@@ -97,8 +97,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[]; 
-  questions?: Question[];     
+  keyTakeaways?: KeyTakeaway[];
+  questions?: Question[];
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -221,7 +221,7 @@ export default function SessionPage() {
     } catch (error) {
       console.error(`Error during admin action (${successMessage}): `, error);
       let displayError = errorMessage;
-      if (error instanceof FirebaseError) displayError = `${errorMessage} (Code: ${error.code})`;
+      if (error instanceof FirestoreError) displayError = `${errorMessage} (Code: ${error.code})`;
       toast({ title: "Error", description: displayError, variant: "destructive" });
     } finally {
         setIsProcessingAdminAction(false);
@@ -326,7 +326,7 @@ export default function SessionPage() {
     } catch (error) {
       console.error("Error ending session details: ", error);
       let errorMessageText = "Could not end session. Please try again.";
-      if (error instanceof FirebaseError) errorMessageText = `Could not end session: ${error.message} (Code: ${error.code})`;
+      if (error instanceof FirestoreError) errorMessageText = `Could not end session: ${error.message} (Code: ${error.code})`;
       else if (error instanceof Error) errorMessageText = `Could not end session: ${error.message}`;
       toast({ title: "Error Ending Session", description: errorMessageText, variant: "destructive" });
     } finally {
@@ -346,23 +346,23 @@ export default function SessionPage() {
         async () => {
             const newQueue = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name.length > 0);
             const sessionDocRef = doc(db, 'sessions', sessionId);
-            
+
             let newPresenterName = "";
             let newPresenterIndex = -1;
-            let roundActive = false; 
+            let roundActive = false;
 
             if (newQueue.length > 0) {
                 newPresenterName = newQueue[0];
                 newPresenterIndex = 0;
-                roundActive = true; 
+                roundActive = true;
             }
-            
+
             await updateDoc(sessionDocRef, {
                 presenterQueue: newQueue,
                 currentPresenterIndex: newPresenterIndex,
                 currentPresenterName: newPresenterName,
-                likeClicks: 0, 
-                dislikeClicks: 0, 
+                likeClicks: 0,
+                dislikeClicks: 0,
                 isRoundActive: roundActive,
             });
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
@@ -405,11 +405,11 @@ export default function SessionPage() {
     );
 
   const isPresenterQueueEffectivelyEmpty = !sessionData?.presenterQueue || sessionData.presenterQueue.length === 0;
-  
+
   const isSpecificPresenterActive = !isPresenterQueueEffectivelyEmpty &&
                                  sessionData?.currentPresenterIndex !== undefined &&
                                  sessionData.currentPresenterIndex >= 0 &&
-                                 sessionData.presenterQueue!.length > 0 && 
+                                 sessionData.presenterQueue!.length > 0 &&
                                  sessionData.currentPresenterIndex < sessionData.presenterQueue!.length &&
                                  sessionData.currentPresenterName !== "" &&
                                  sessionData.currentPresenterName !== "End of Queue";
@@ -427,18 +427,15 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-        
-        const newTakeaway: KeyTakeawayWrite = { 
+
+        const newTakeaway: KeyTakeawayWrite = {
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
             submittedAt: serverTimestamp()
         };
-        
-        console.log("Submitting Key Takeaway Object:", JSON.stringify(newTakeaway, null, 2));
-        // For more detailed inspection of FieldValue, log newTakeaway directly without JSON.stringify
-        console.log("Actual Key Takeaway object for Firestore:", newTakeaway);
 
+        console.log("Submitting Key Takeaway Object (raw):", newTakeaway);
 
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
@@ -448,7 +445,7 @@ export default function SessionPage() {
     } catch (error) {
         console.error("Error submitting takeaway: ", error);
         let description = "Could not submit takeaway. Please try again.";
-        if (error instanceof FirebaseError) {
+        if (error instanceof FirestoreError) {
             description = `Firebase Error: ${error.message} (Code: ${error.code})`;
         } else if (error instanceof Error) {
             description = `Error: ${error.message}`;
@@ -467,17 +464,15 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-        
-        const newQuestion: QuestionWrite = { 
+
+        const newQuestion: QuestionWrite = {
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
             submittedAt: serverTimestamp()
         };
 
-        console.log("Submitting Question Object:", JSON.stringify(newQuestion, null, 2));
-        // For more detailed inspection of FieldValue, log newQuestion directly without JSON.stringify
-        console.log("Actual Question object for Firestore:", newQuestion);
+        console.log("Submitting Question Object (raw):", newQuestion);
 
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -487,7 +482,7 @@ export default function SessionPage() {
     } catch (error) {
         console.error("Error submitting question: ", error);
         let description = "Could not submit question. Please try again.";
-        if (error instanceof FirebaseError) {
+        if (error instanceof FirestoreError) {
             description = `Firebase Error: ${error.message} (Code: ${error.code})`;
         } else if (error instanceof Error) {
             description = `Error: ${error.message}`;
@@ -562,7 +557,7 @@ export default function SessionPage() {
 
   const isQueueAtEnd = !isPresenterQueueEffectivelyEmpty &&
                        sessionData.currentPresenterIndex !== undefined &&
-                       sessionData.presenterQueue!.length > 0 && 
+                       sessionData.presenterQueue!.length > 0 &&
                        sessionData.currentPresenterIndex >= sessionData.presenterQueue!.length -1;
 
 
@@ -577,28 +572,28 @@ export default function SessionPage() {
       sessionStatusMessage = "Feedback round is CLOSED.";
   } else if (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1) {
       presenterDisplayMessage = "Presenter queue is set.";
-      sessionStatusMessage = isCurrentUserAdmin ? 
+      sessionStatusMessage = isCurrentUserAdmin ?
           (sessionData.isRoundActive ? "General feedback round is OPEN. You can also start the presentations." : "Admin can start the presentations or open a general feedback round.") :
           (sessionData.isRoundActive ? "General feedback round is OPEN." : "Waiting for admin to start presentations or open a general round.");
-  } else { 
+  } else {
       presenterDisplayMessage = isCurrentUserAdmin ? "No presenter list. Run a general feedback round or add presenters." : "General feedback session.";
       sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is CLOSED.";
   }
 
 
-  const disableOpenCloseRoundButton = isProcessingAdminAction || 
-                                   (isSpecificPresenterActive && sessionData.currentPresenterName === "End of Queue") || 
-                                   (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== -1 && !isSpecificPresenterActive); 
+  const disableOpenCloseRoundButton = isProcessingAdminAction ||
+                                   (isSpecificPresenterActive && sessionData.currentPresenterName === "End of Queue") ||
+                                   (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== -1 && !isSpecificPresenterActive);
 
-  const disableClearScoresButton = isProcessingAdminAction || 
-                                (!sessionData.isRoundActive && !isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && !isPresenterQueueEffectivelyEmpty) || 
-                                (!sessionData.isRoundActive && isPresenterQueueEffectivelyEmpty) || 
-                                (sessionData.currentPresenterName === "End of Queue"); 
+  const disableClearScoresButton = isProcessingAdminAction ||
+                                (!sessionData.isRoundActive && !isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && !isPresenterQueueEffectivelyEmpty) ||
+                                (!sessionData.isRoundActive && isPresenterQueueEffectivelyEmpty) ||
+                                (sessionData.currentPresenterName === "End of Queue");
 
-  const nextPresenterButtonDisabled = isProcessingAdminAction || 
-                                   isPresenterQueueEffectivelyEmpty || 
-                                   isQueueAtEnd || 
-                                   sessionData.currentPresenterIndex === -1; 
+  const nextPresenterButtonDisabled = isProcessingAdminAction ||
+                                   isPresenterQueueEffectivelyEmpty ||
+                                   isQueueAtEnd ||
+                                   sessionData.currentPresenterIndex === -1;
 
 
   return (
@@ -647,13 +642,12 @@ export default function SessionPage() {
         <div className={cn(
             "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
         )}>
-            
-            {/* Left Column */}
-             <section className={cn(
+
+            <section className={cn(
                 "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
+                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7"
             )}>
-                {!isCurrentUserAdmin && (
+                 {!isCurrentUserAdmin && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
                             <CardTitle className="text-xl">Set Your Nickname</CardTitle>
@@ -681,35 +675,7 @@ export default function SessionPage() {
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                 />
-            </section>
-
-            {/* Right Column */}
-            <section className={cn(
-                "space-y-4",
-                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
-            )}>
-                 {(participantList.length > 0 || isCurrentUserAdmin) && ( 
-                    <Card className="w-full shadow-lg">
-                        <CardHeader>
-                            <CardTitle className="text-xl font-bold flex items-center justify-center">
-                            <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <ScrollArea className="h-40">
-                            <ul className="space-y-1">
-                                {participantList.map(p => (
-                                <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
-                                    {p.nickname || 'Anonymous User'}
-                                </li>
-                                ))}
-                            </ul>
-                            </ScrollArea>
-                        </CardContent>
-                    </Card>
-                )}
-                
-                {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
+                 {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
                             <CardTitle className="text-xl flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary" />Submit Key Takeaway</CardTitle>
@@ -727,6 +693,32 @@ export default function SessionPage() {
                             <Button onClick={handleSubmitTakeaway} className="w-full" disabled={isSubmittingTakeaway || !takeawayInput.trim() || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}>
                                 {isSubmittingTakeaway ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Takeaway</>}
                             </Button>
+                        </CardContent>
+                    </Card>
+                )}
+            </section>
+
+            <section className={cn(
+                "space-y-4",
+                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
+            )}>
+                 {(participantList.length > 0 ) && (
+                    <Card className="w-full shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-xl font-bold flex items-center justify-center">
+                            <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <ScrollArea className="h-40">
+                            <ul className="space-y-1">
+                                {participantList.map(p => (
+                                <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                                    {p.nickname || 'Anonymous User'}
+                                </li>
+                                ))}
+                            </ul>
+                            </ScrollArea>
                         </CardContent>
                     </Card>
                 )}
@@ -754,7 +746,6 @@ export default function SessionPage() {
                 )}
 
 
-                {/* Admin Controls and Displays */}
                 {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
                   <>
                     <Card className="w-full shadow-lg">
@@ -839,7 +830,7 @@ export default function SessionPage() {
                                                 </p>
                                             )}
                                         </div>
-                                        
+
                                         <div className="space-y-3 border p-3 rounded-md bg-muted/20 dark:bg-muted/30">
                                             <h3 className="text-md font-semibold">General Round & Score Controls</h3>
                                              <div className="text-xs text-center font-medium">
@@ -964,7 +955,7 @@ export default function SessionPage() {
                                     </AccordionContent>
                                 </AccordionItem>
                             </Accordion>
-                            
+
                             <div className="mt-6 pt-6 border-t dark:border-gray-700">
                                 <div className="flex items-center">
                                     <Button onClick={triggerEndSessionDialog} variant="destructive" className="w-full" disabled={isProcessingAdminAction}>
