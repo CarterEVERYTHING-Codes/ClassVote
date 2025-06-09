@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue } from 'firebase/firestore'; // Ensure FieldValue is imported
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils";
 
 interface ParticipantData {
   nickname: string;
-  joinedAt: Timestamp | FieldValue; // joinedAt can be FieldValue on write, Timestamp on read
+  joinedAt: Timestamp | FieldValue;
 }
 
 // Interface for data READ from Firestore
@@ -98,8 +98,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[];
-  questions?: Question[];
+  keyTakeaways?: KeyTakeaway[]; // Uses the "Read" interface
+  questions?: Question[];     // Uses the "Read" interface
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -433,10 +433,9 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp()
+            submittedAt: serverTimestamp() // Assign FieldValue directly
         };
-        // console.log("Attempting to submit Key Takeaway:", JSON.stringify(newTakeaway, null, 2)); // For debugging
-
+        
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
         });
@@ -465,13 +464,12 @@ export default function SessionPage() {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
         
-        const newQuestion: QuestionWrite = {
+        const newQuestion: QuestionWrite = { // Use QuestionWrite interface
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp()
+            submittedAt: serverTimestamp() // Assign FieldValue directly
         };
-        // console.log("Attempting to submit Question:", JSON.stringify(newQuestion, null, 2)); // For debugging
 
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -549,7 +547,6 @@ export default function SessionPage() {
     .sort((a, b) => {
         const timeAValue = a.joinedAt;
         const timeBValue = b.joinedAt;
-        // Handle serverTimestamp() which might not be a Timestamp instance yet client-side
         const timeA = timeAValue instanceof Timestamp ? timeAValue.toMillis() : (typeof (timeAValue as any)?.seconds === 'number' ? (timeAValue as any).seconds * 1000 : Date.now());
         const timeB = timeBValue instanceof Timestamp ? timeBValue.toMillis() : (typeof (timeBValue as any)?.seconds === 'number' ? (timeBValue as any).seconds * 1000 : Date.now());
         return timeA - timeB;
@@ -643,7 +640,7 @@ export default function SessionPage() {
             "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
         )}>
             
-            {/* Left Column */}
+            {/* Left Column: Nickname, Leaderboard */}
             <section className={cn(
                 "space-y-4",
                 isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
@@ -678,7 +675,7 @@ export default function SessionPage() {
                 />
             </section>
 
-            {/* Right Column */}
+            {/* Right Column: Participants, Admin Controls/Submissions */}
             <section className={cn(
                 "space-y-4",
                  isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
@@ -1081,5 +1078,3 @@ export default function SessionPage() {
     </main>
   );
 }
-
-    
