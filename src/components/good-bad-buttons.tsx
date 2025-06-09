@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
@@ -11,7 +12,7 @@ import { doc, updateDoc, increment, getDoc, FirebaseError } from "firebase/fires
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
-  soundsEnabled: boolean; // New prop
+  soundsEnabled: boolean; 
 }
 
 const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp, soundsEnabled }) => {
@@ -30,6 +31,9 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       const voted = localStorage.getItem(localStorageKey) === 'true';
       setHasVotedInCurrentRound(voted);
     } else {
+      // If round becomes inactive, clear vote status for THIS session instance
+      // This primarily handles admin closing the round explicitly.
+      // If admin clears scores or advances presenter, that clears localStorage in the SessionPage component.
       localStorage.removeItem(localStorageKey);
       setHasVotedInCurrentRound(false);
     }
@@ -46,7 +50,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       likeSynth.current.envelope.decay = 0.1;
       likeSynth.current.envelope.sustain = 0.3;
       likeSynth.current.envelope.release = 0.4;
-      likeSynth.current.volume.value = -3;
+      likeSynth.current.volume.value = -3; // Slightly louder
     }
 
     if (dislikeSynth.current) {
@@ -55,7 +59,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       dislikeSynth.current.envelope.decay = 0.2;
       dislikeSynth.current.envelope.sustain = 0.1;
       dislikeSynth.current.envelope.release = 0.5;
-      dislikeSynth.current.volume.value = -9;
+      dislikeSynth.current.volume.value = -9; // Slightly louder
     }
 
     return () => {
@@ -85,11 +89,12 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
     if (!sessionId) return false;
     const sessionDocRef = doc(db, 'sessions', sessionId);
     try {
+      // Re-fetch session doc just before updating to check isRoundActive server-side
       const currentSessionDoc = await getDoc(sessionDocRef);
       if (!currentSessionDoc.exists() || !currentSessionDoc.data()?.isRoundActive) {
         toast({ title: "Vote Not Counted", description: "The feedback round may have just closed or the session has ended.", variant: "default" });
-        setInternalIsRoundActive(false); 
-        localStorage.removeItem(localStorageKey);
+        setInternalIsRoundActive(false); // Reflect server state
+        localStorage.removeItem(localStorageKey); // Clear vote status as round is confirmed closed
         setHasVotedInCurrentRound(false);
         return false;
       }
@@ -107,6 +112,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       } else {
           toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
       }
+      // Attempt to sync local state with server state on error
       const currentSessionDoc = await getDoc(sessionDocRef);
       if (currentSessionDoc.exists()) {
         const isActive = currentSessionDoc.data()?.isRoundActive ?? false;
@@ -115,7 +121,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
           localStorage.removeItem(localStorageKey);
           setHasVotedInCurrentRound(false);
         }
-      } else { 
+      } else { // Session might have been deleted
         setInternalIsRoundActive(false);
         localStorage.removeItem(localStorageKey);
         setHasVotedInCurrentRound(false);
@@ -167,44 +173,44 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   }
 
 
-  if (isLoadingClick && !buttonDisabledState) { 
+  if (isLoadingClick && !buttonDisabledState) { // Show loading state only if buttons were enabled before click
       return (
-        <div className="flex flex-col items-center space-y-4">
-          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
-            <Button className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md opacity-70 cursor-wait`} disabled>
-              <ThumbsUp className="mr-3 h-6 w-6" /> Processing...
+        <div className="flex flex-col items-center space-y-3 w-full max-w-md">
+          <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 w-full">
+            <Button className={`flex-1 py-3 text-md font-semibold rounded-lg shadow-md opacity-70 cursor-wait`} disabled>
+              <ThumbsUp className="mr-2 h-5 w-5" /> Processing...
             </Button>
-            <Button className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md opacity-70 cursor-wait`} disabled>
-              <ThumbsDown className="mr-3 h-6 w-6" /> Processing...
+            <Button className={`flex-1 py-3 text-md font-semibold rounded-lg shadow-md opacity-70 cursor-wait`} disabled>
+              <ThumbsDown className="mr-2 h-5 w-5" /> Processing...
             </Button>
           </div>
-           <p className="mt-2 text-sm text-muted-foreground">{statusMessage}</p>
+           <p className="mt-1 text-xs text-muted-foreground">{statusMessage}</p>
         </div>
       );
   }
 
 
   return (
-    <div className="flex flex-col items-center space-y-4">
-      <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
+    <div className="flex flex-col items-center space-y-3 w-full max-w-md">
+      <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 w-full">
         <Button
           onClick={playLikeSound}
-          className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-green-500 hover:bg-green-600 text-white`}
+          className={`flex-1 py-3 text-md font-semibold rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-green-500 hover:bg-green-600 text-white`}
           aria-label="Vote Like"
           disabled={buttonDisabledState}
         >
-          <ThumbsUp className="mr-3 h-6 w-6" /> Like
+          <ThumbsUp className="mr-2 h-5 w-5" /> Like
         </Button>
         <Button
           onClick={playDislikeSound}
-          className={`px-8 py-4 text-lg font-medium rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-red-500 hover:bg-red-600 text-white`}
+          className={`flex-1 py-3 text-md font-semibold rounded-lg shadow-md hover:shadow-lg ${pulseAnimationClass} ${disabledClass} bg-red-500 hover:bg-red-600 text-white`}
           aria-label="Vote Dislike"
           disabled={buttonDisabledState}
         >
-          <ThumbsDown className="mr-3 h-6 w-6" /> Dislike
+          <ThumbsDown className="mr-2 h-5 w-5" /> Dislike
         </Button>
       </div>
-      <p className={`mt-2 text-sm ${!internalIsRoundActive ? 'font-semibold text-orange-600 dark:text-orange-400' : 'text-muted-foreground'}`}>
+      <p className={`mt-1 text-xs ${!internalIsRoundActive ? 'font-semibold text-orange-600 dark:text-orange-400' : 'text-muted-foreground'}`}>
         {statusMessage}
       </p>
     </div>
@@ -212,3 +218,4 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
 };
 
 export default GoodBadButtons;
+
