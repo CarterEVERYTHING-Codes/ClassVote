@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils";
 
 interface ParticipantData {
   nickname: string;
-  joinedAt: Timestamp | any; // 'any' for flexibility if serverTimestamp() initially makes it a FieldValue before resolution
+  joinedAt: Timestamp | FieldValue;
 }
 
 // Interface for data READ from Firestore
@@ -55,7 +55,7 @@ interface KeyTakeaway {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: Timestamp; // When read, it's a resolved Timestamp
+    submittedAt: Timestamp;
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -63,7 +63,7 @@ interface KeyTakeawayWrite {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: FieldValue; // When writing, use FieldValue for serverTimestamp()
+    submittedAt: FieldValue;
 }
 
 // Interface for data READ from Firestore
@@ -71,7 +71,7 @@ interface Question {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: Timestamp; // When read, it's a resolved Timestamp
+    submittedAt: Timestamp;
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -79,7 +79,7 @@ interface QuestionWrite {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: FieldValue; // When writing, use FieldValue for serverTimestamp()
+    submittedAt: FieldValue;
 }
 
 interface SessionData {
@@ -87,7 +87,7 @@ interface SessionData {
   isRoundActive: boolean;
   likeClicks: number;
   dislikeClicks: number;
-  createdAt: Timestamp | any;
+  createdAt: Timestamp | FieldValue;
   sessionEnded: boolean;
   soundsEnabled: boolean;
   resultsVisible: boolean;
@@ -98,8 +98,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[]; // Uses the READ interface
-  questions?: Question[];     // Uses the READ interface
+  keyTakeaways?: KeyTakeaway[];
+  questions?: Question[];
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -321,24 +321,20 @@ export default function SessionPage() {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      // Redirect only if current user is admin, after all operations
       if (sessionData && sessionData.adminUid === currentUser?.uid) {
           router.push('/');
       }
     } catch (error) {
       console.error("Error ending session details: ", error);
-      let errorMessage = "Could not end session. Please try again.";
-      if (error instanceof FirebaseError) errorMessage = `Could not end session: ${error.message} (Code: ${error.code})`;
-      else if (error instanceof Error) errorMessage = `Could not end session: ${error.message}`;
-      toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
+      let errorMessageText = "Could not end session. Please try again.";
+      if (error instanceof FirebaseError) errorMessageText = `Could not end session: ${error.message} (Code: ${error.code})`;
+      else if (error instanceof Error) errorMessageText = `Could not end session: ${error.message}`;
+      toast({ title: "Error Ending Session", description: errorMessageText, variant: "destructive" });
     } finally {
       setIsProcessingAdminAction(false);
       setShowEndSessionDialog(false);
-      // Ensure redirection logic here is conditional if not already handled above
        if (sessionData && sessionData.adminUid === currentUser?.uid && sessionData.sessionEnded) {
-          // This check might be redundant if router.push is in try block on success
-          // but ensures admin is redirected if session becomes ended.
-          if (router.asPath.startsWith('/session/')) { // Avoid pushing if already navigating away
+          if (router.asPath.startsWith('/session/')) {
             router.push('/');
           }
        }
@@ -414,7 +410,7 @@ export default function SessionPage() {
   const isSpecificPresenterActive = !isPresenterQueueEffectivelyEmpty &&
                                  sessionData?.currentPresenterIndex !== undefined &&
                                  sessionData.currentPresenterIndex >= 0 &&
-                                 sessionData.currentPresenterQueue!.length > 0 && // Ensure queue is not empty
+                                 sessionData.currentPresenterQueue!.length > 0 && 
                                  sessionData.currentPresenterIndex < sessionData.presenterQueue!.length &&
                                  sessionData.currentPresenterName !== "" &&
                                  sessionData.currentPresenterName !== "End of Queue";
@@ -445,11 +441,13 @@ export default function SessionPage() {
         setTakeawayInput('');
     } catch (error) {
         console.error("Error submitting takeaway: ", error);
-        let desc = "Could not submit takeaway.";
-        if (error instanceof FirebaseError && error.message.includes("arrayUnion() called with invalid data")) {
-            desc = "There was an issue submitting your takeaway. Please try again. (Error: FT01)";
+        let description = "Could not submit takeaway. Please try again.";
+        if (error instanceof FirebaseError) {
+            description = `Firebase Error: ${error.message} (Code: ${error.code})`;
+        } else if (error instanceof Error) {
+            description = `Error: ${error.message}`;
         }
-        toast({ title: "Error", description: desc, variant: "destructive" });
+        toast({ title: "Submission Failed", description, variant: "destructive" });
     }
     setIsSubmittingTakeaway(false);
   };
@@ -476,11 +474,13 @@ export default function SessionPage() {
         setQuestionInput('');
     } catch (error) {
         console.error("Error submitting question: ", error);
-        let desc = "Could not submit question.";
-         if (error instanceof FirebaseError && error.message.includes("arrayUnion() called with invalid data")) {
-            desc = "There was an issue submitting your question. Please try again. (Error: FQ01)";
+        let description = "Could not submit question. Please try again.";
+        if (error instanceof FirebaseError) {
+            description = `Firebase Error: ${error.message} (Code: ${error.code})`;
+        } else if (error instanceof Error) {
+            description = `Error: ${error.message}`;
         }
-        toast({ title: "Error", description: desc, variant: "destructive" });
+        toast({ title: "Submission Failed", description, variant: "destructive" });
     }
     setIsSubmittingQuestion(false);
   };
@@ -548,7 +548,7 @@ export default function SessionPage() {
 
   const isQueueAtEnd = !isPresenterQueueEffectivelyEmpty &&
                        sessionData.currentPresenterIndex !== undefined &&
-                       sessionData.presenterQueue!.length > 0 && // Ensure queue is not empty before checking index
+                       sessionData.presenterQueue!.length > 0 && 
                        sessionData.currentPresenterIndex >= sessionData.presenterQueue!.length -1;
 
 
@@ -585,6 +585,10 @@ export default function SessionPage() {
                                    isPresenterQueueEffectivelyEmpty || 
                                    isQueueAtEnd || 
                                    sessionData.currentPresenterIndex === -1; 
+
+  const leftColSpan = isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7";
+  const rightColSpan = isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5";
+
 
   return (
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
@@ -632,11 +636,8 @@ export default function SessionPage() {
         <div className={cn(
             "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
         )}>
-            {/* Left Column */}
-            <section className={cn(
-                "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
-            )}>
+            
+            <section className={cn("space-y-4", leftColSpan)}>
                 {!isCurrentUserAdmin && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
@@ -689,11 +690,8 @@ export default function SessionPage() {
                 )}
             </section>
 
-            {/* Right Column */}
-            <section className={cn(
-                "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
-            )}>
+            
+            <section className={cn("space-y-4", rightColSpan)}>
                  {(participantList.length > 0 || isCurrentUserAdmin) && (
                     <Card className="w-full shadow-lg">
                         <CardHeader>
@@ -1069,3 +1067,5 @@ export default function SessionPage() {
     </main>
   );
 }
+
+    
