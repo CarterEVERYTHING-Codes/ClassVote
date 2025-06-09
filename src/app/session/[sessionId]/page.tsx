@@ -298,7 +298,7 @@ export default function SessionPage() {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      setShowEndSessionDialog(false);
+      setShowEndSessionDialog(false); // Ensure dialog is closed before redirect
       router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -688,7 +688,7 @@ export default function SessionPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <Accordion type="single" collapsible className="w-full" defaultValue="presenters">
+                            <Accordion type="single" collapsible className="w-full">
                                 <AccordionItem value="presenters">
                                     <AccordionTrigger className="text-lg font-semibold">Presenter & Round Management</AccordionTrigger>
                                     <AccordionContent className="space-y-4 pt-3">
@@ -954,3 +954,6 @@ export default function SessionPage() {
     </main>
   );
 }
+
+
+    
