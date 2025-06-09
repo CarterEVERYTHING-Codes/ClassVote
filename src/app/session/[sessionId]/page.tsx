@@ -16,6 +16,17 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
     Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
     ListChecks, ChevronsRight, MessageSquarePlus, Lightbulb, HelpCircle, Send, Info
 } from 'lucide-react';
@@ -88,19 +99,19 @@ export default function SessionPage() {
   const [isSubmittingTakeaway, setIsSubmittingTakeaway] = useState(false);
   const [questionInput, setQuestionInput] = useState('');
   const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false);
+  const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
+
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (!user) {
-        // If user logs out or auth state is lost, clear nickname input
         setNicknameInput('');
       }
     });
     return () => unsubscribeAuth();
   }, []);
 
-  // Effect for Firestore subscription
   useEffect(() => {
     if (!sessionId) {
       setIsLoading(false);
@@ -117,7 +128,6 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
-        // Pre-fill presenter queue input if it's empty and data exists (only if not ended)
         if (data.presenterQueue && presenterQueueInput === '' && !data.sessionEnded) {
            setPresenterQueueInput(data.presenterQueue.join('\n'));
         }
@@ -139,18 +149,16 @@ export default function SessionPage() {
     });
 
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast]); // Removed nicknameInput from dependencies
+  }, [sessionId, router, toast]);
 
 
-  // Effect for pre-filling nicknameInput based on currentUser and sessionData
   useEffect(() => {
     if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname) {
-      // Only pre-fill if nicknameInput is currently empty to avoid overwriting user typing
       if (nicknameInput === '') {
         setNicknameInput(sessionData.participants[currentUser.uid].nickname);
       }
     }
-  }, [currentUser, sessionData]); // Removed nicknameInput
+  }, [currentUser, sessionData, nicknameInput]);
 
 
   useEffect(() => {
@@ -261,19 +269,24 @@ export default function SessionPage() {
       "Could not toggle Q&A status."
     );
 
-  const handleEndSession = async () => {
+  const triggerEndSessionDialog = () => {
     if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
       return;
     }
-    if (!window.confirm("Are you sure you want to end this session? This action cannot be undone.")) {
-      return;
-    }
+    setShowEndSessionDialog(true);
+  }
 
+  const executeEndSession = async () => {
+    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
+        setShowEndSessionDialog(false);
+        return;
+    }
     setIsProcessingAdminAction(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
+      setShowEndSessionDialog(false); 
       router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -283,8 +296,10 @@ export default function SessionPage() {
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
     } finally {
       setIsProcessingAdminAction(false); 
+      setShowEndSessionDialog(false); 
     }
   };
+
 
   const handleSetPresenterQueue = () =>
     handleAdminAction(
@@ -321,7 +336,7 @@ export default function SessionPage() {
 
             if (newIndex >= sessionData.presenterQueue.length) {
                 toast({ title: "End of Queue", description: "You have reached the end of the presenter list. Round closed.", variant: "default" });
-                await updateDoc(doc(db, 'sessions', sessionId), { isRoundActive: false, currentPresenterName: "End of Queue" }); // Also set name to indicate end
+                await updateDoc(doc(db, 'sessions', sessionId), { isRoundActive: false, currentPresenterName: "End of Queue" });
                 return;
             }
 
@@ -751,8 +766,8 @@ export default function SessionPage() {
                     </div>
                 </div>
                  <div className="flex items-center !mt-8">
-                    <Button onClick={handleEndSession} variant="destructive" className="w-full" disabled={isProcessingAdminAction}>
-                    <Trash2 className="mr-2 h-4 w-4" /> End Session
+                    <Button onClick={triggerEndSessionDialog} variant="destructive" className="w-full" disabled={isProcessingAdminAction}>
+                        <Trash2 className="mr-2 h-4 w-4" /> End Session
                     </Button>
                     <Tooltip>
                         <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-8 w-8"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
@@ -762,6 +777,24 @@ export default function SessionPage() {
             </CardContent>
             </Card>
         )}
+
+        <AlertDialog open={showEndSessionDialog} onOpenChange={setShowEndSessionDialog}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action will permanently end the session for all participants. This cannot be undone.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setShowEndSessionDialog(false)}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={executeEndSession} disabled={isProcessingAdminAction}>
+                    {isProcessingAdminAction ? "Ending..." : "Yes, End Session"}
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
 
         {isCurrentUserAdmin && sessionData && sessionData.sessionEnded && (
             <Card className="w-full max-w-md shadow-lg mt-12">
@@ -792,4 +825,4 @@ export default function SessionPage() {
   );
 }
 
-    
+  
