@@ -32,7 +32,7 @@ ClassVote is a real-time, interactive web application where users can create or 
     *   **Copy Configuration:** After registering the web app, Firebase will display a `firebaseConfig` object. Copy these values.
     *   **Update `src/lib/firebase.ts`:** Open the `src/lib/firebase.ts` file in your project and replace the placeholder values in the `firebaseConfig` object with the ones you copied from your Firebase project.
     *   **Firestore Security Rules:** Update your Firestore security rules. Navigate to Firestore Database > Rules tab in the Firebase console and replace the default rules with the following:
-        ```
+        ```firestore-rules
         rules_version = '2';
         service cloud.firestore {
           match /databases/{database}/documents {
@@ -47,10 +47,10 @@ ClassVote is a real-time, interactive web application where users can create or 
                                request.resource.data.sessionEnded == false &&
                                request.resource.data.soundsEnabled == true &&
                                request.resource.data.resultsVisible == true &&
-                               request.resource.data.sessionType == 'quick' && // Ensure sessionType is set on create
+                               request.resource.data.sessionType == 'quick' &&
                                request.resource.data.participants is map &&
-                               request.resource.data.participants.size() == 0;
-
+                               request.resource.data.participants.size() == 0 &&
+                               request.resource.data.createdAt == request.time; // Use server timestamp
 
               allow update: if request.auth != null && resource.data.sessionEnded == false && (
                               // Admin actions
@@ -58,25 +58,35 @@ ClassVote is a real-time, interactive web application where users can create or 
                                 (
                                   // Toggle round
                                   (request.resource.data.isRoundActive != resource.data.isRoundActive &&
-                                   (request.resource.data.likeClicks == 0 || request.resource.data.likeClicks == resource.data.likeClicks) &&
+                                   (request.resource.data.likeClicks == 0 || request.resource.data.likeClicks == resource.data.likeClicks) && // Allow resetting clicks or keeping them
                                    (request.resource.data.dislikeClicks == 0 || request.resource.data.dislikeClicks == resource.data.dislikeClicks)
                                   ) ||
                                   // Clear scores
                                   (request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 &&
-                                   request.resource.data.isRoundActive == resource.data.isRoundActive
+                                   request.resource.data.isRoundActive == resource.data.isRoundActive // isRoundActive should not change here
                                   ) ||
                                   // End session
-                                  (request.resource.data.sessionEnded == true && resource.data.sessionEnded == false) ||
+                                  (request.resource.data.sessionEnded == true && resource.data.sessionEnded == false) || // Allow ending session
                                   // Toggle soundsEnabled
                                   (request.resource.data.soundsEnabled != resource.data.soundsEnabled) ||
                                   // Toggle resultsVisible
                                   (request.resource.data.resultsVisible != resource.data.resultsVisible)
                                 ) &&
-                                // Ensure admin doesn't change other critical fields during these specific actions, except participants map and sessionType
-                                request.resource.data.adminUid == resource.data.adminUid &&
-                                request.resource.data.createdAt == resource.data.createdAt &&
+                                // Ensure admin doesn't change other critical fields during these specific actions,
+                                // EXCEPT for participants map which admin might modify (e.g. future kick user)
+                                // or if the specific admin action explicitly changes a field (like isRoundActive, sessionEnded).
+                                request.resource.data.adminUid == resource.data.adminUid && // adminUid cannot change
+                                request.resource.data.createdAt == resource.data.createdAt && // createdAt cannot change
                                 request.resource.data.sessionType == resource.data.sessionType && // sessionType should not be changed by these admin actions
-                                (request.resource.data.participants == resource.data.participants || (request.resource.data.participants is map && resource.data.participants is map && request.resource.data.participants.diff(resource.data.participants).affectedKeys().size() > 0) || (!(resource.data.participants is map) && request.resource.data.participants is map)) // Allow admin to modify participants
+                                // The following fields are either explicitly changed above or must match resource.data
+                                (request.resource.data.likeClicks == resource.data.likeClicks || request.resource.data.likeClicks == 0) &&
+                                (request.resource.data.dislikeClicks == resource.data.dislikeClicks || request.resource.data.dislikeClicks == 0) &&
+                                (request.resource.data.isRoundActive == resource.data.isRoundActive || request.resource.data.isRoundActive != resource.data.isRoundActive) && // Covered by toggle logic
+                                (request.resource.data.sessionEnded == resource.data.sessionEnded || request.resource.data.sessionEnded == true) && // Covered by end session logic
+                                (request.resource.data.soundsEnabled == resource.data.soundsEnabled || request.resource.data.soundsEnabled != resource.data.soundsEnabled) && // Covered by toggle
+                                (request.resource.data.resultsVisible == resource.data.resultsVisible || request.resource.data.resultsVisible != resource.data.resultsVisible) && // Covered by toggle
+                                // Allow participants map to be different if admin is making changes
+                                (request.resource.data.participants == resource.data.participants || (request.resource.data.participants is map && resource.data.participants is map && request.resource.data.participants.diff(resource.data.participants).affectedKeys().size() > 0) || (!(resource.data.participants is map) && request.resource.data.participants is map))
                               ) ||
                               // User voting actions
                               (
@@ -92,35 +102,36 @@ ClassVote is a real-time, interactive web application where users can create or 
                                 request.resource.data.createdAt == resource.data.createdAt &&
                                 request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                 request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                request.resource.data.sessionType == resource.data.sessionType && // sessionType should not be changed by voting
+                                request.resource.data.sessionType == resource.data.sessionType &&
                                 request.resource.data.participants == resource.data.participants // Participants map not changed by voting
                               ) ||
-                              // User updating their own nickname in participants map
+                              // User setting/updating their own nickname in participants map
                               (
-                                // A: Incoming data for this participant is valid
+                                // P1: The *only* top-level field changing in the document is 'participants'.
+                                // This means all other fields (adminUid, createdAt, sessionType, isRoundActive, likeClicks, etc.)
+                                // in request.resource.data must be identical to resource.data.
+                                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
+
+                                // P2: The change within 'participants' map involves a valid entry for the current user.
+                                request.resource.data.participants is map &&
                                 request.auth.uid in request.resource.data.participants &&
                                 request.resource.data.participants[request.auth.uid].nickname is string &&
-                                request.resource.data.participants[request.auth.uid].joinedAt != null &&
-
-                                // B: Logic for new vs. existing participant, robustly handling participants map
                                 (
-                                  // New participant: either participants map doesn't exist in current doc, or user is not in it
-                                  ( !(resource.data.participants is map) || ( (resource.data.participants is map) && !(request.auth.uid in resource.data.participants) ) )
-                                  ||
-                                  // Existing participant: participants map exists in current doc, user is in it, and only their data is changing
-                                  ( (resource.data.participants is map) && (request.auth.uid in resource.data.participants) && request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid]) )
+                                    // Case P2a: User is new to participants map, joinedAt must be server timestamp.
+                                    (
+                                      !(resource.data.participants is map && request.auth.uid in resource.data.participants) && // User not in existing map or map doesn't exist
+                                      request.resource.data.participants[request.auth.uid].joinedAt == request.time
+                                    ) ||
+                                    // Case P2b: User exists in participants map, joinedAt must be the same (not changing).
+                                    (
+                                      resource.data.participants is map && request.auth.uid in resource.data.participants &&
+                                      request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt
+                                    )
                                 ) &&
 
-                                // C: Ensure other critical fields are not changed by this user action
-                                request.resource.data.adminUid == resource.data.adminUid &&
-                                request.resource.data.isRoundActive == resource.data.isRoundActive &&
-                                request.resource.data.likeClicks == resource.data.likeClicks &&
-                                request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                request.resource.data.sessionEnded == resource.data.sessionEnded &&
-                                request.resource.data.createdAt == resource.data.createdAt &&
-                                request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                request.resource.data.sessionType == resource.data.sessionType // sessionType must remain unchanged
+                                // P3: Within the 'participants' map, only the current user's entry (identified by their UID)
+                                // is being added or modified.
+                                request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid])
                               )
                             );
             }
