@@ -33,12 +33,14 @@ import {
   } from "@/components/ui/accordion";
 import {
     Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, MessageSquarePlus, Lightbulb, HelpCircle, Send, Info, UserPlusIcon
+    ListChecks, ChevronsRight, MessageSquarePlus, Lightbulb, HelpCircle, Send, Info, UserPlusIcon,
+    FileText, MessageCircleQuestion
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FirebaseError } from 'firebase/app';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatDistanceToNow } from 'date-fns';
 
 
 interface ParticipantData {
@@ -298,7 +300,7 @@ export default function SessionPage() {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      setShowEndSessionDialog(false); // Ensure dialog is closed before redirect
+      setShowEndSessionDialog(false);
       router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -681,6 +683,7 @@ export default function SessionPage() {
                 )}
 
                 {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
+                  <>
                     <Card className="w-full shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-center text-xl md:text-2xl font-bold flex items-center justify-center">
@@ -902,6 +905,65 @@ export default function SessionPage() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Key Takeaways Display for Admin */}
+                    <Card className="w-full shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-xl font-bold flex items-center justify-center">
+                                <FileText className="mr-2 h-5 w-5" /> Key Takeaways
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {!sessionData.keyTakeawaysEnabled ? (
+                                <p className="text-sm text-muted-foreground text-center">Key takeaway submissions are currently disabled.</p>
+                            ) : (sessionData.keyTakeaways && sessionData.keyTakeaways.length > 0) ? (
+                                <ScrollArea className="h-60">
+                                    <ul className="space-y-3">
+                                        {sessionData.keyTakeaways.sort((a,b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)).map((item, index) => (
+                                            <li key={index} className="p-3 border rounded-md bg-muted/30">
+                                                <p className="text-sm break-words">{item.takeaway}</p>
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    - {item.nickname} ({item.submittedAt ? formatDistanceToNow(item.submittedAt.toDate(), { addSuffix: true }) : 'just now'})
+                                                </p>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </ScrollArea>
+                            ) : (
+                                <p className="text-sm text-muted-foreground text-center">No key takeaways submitted yet.</p>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Q&A Questions Display for Admin */}
+                    <Card className="w-full shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-xl font-bold flex items-center justify-center">
+                                <MessageCircleQuestion className="mr-2 h-5 w-5" /> Questions
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {!sessionData.qnaEnabled ? (
+                                <p className="text-sm text-muted-foreground text-center">Q&A submissions are currently disabled.</p>
+                            ) : (sessionData.questions && sessionData.questions.length > 0) ? (
+                                <ScrollArea className="h-60">
+                                    <ul className="space-y-3">
+                                        {sessionData.questions.sort((a,b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)).map((item, index) => (
+                                            <li key={index} className="p-3 border rounded-md bg-muted/30">
+                                                <p className="text-sm break-words">{item.questionText}</p>
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    - {item.nickname} ({item.submittedAt ? formatDistanceToNow(item.submittedAt.toDate(), { addSuffix: true }) : 'just now'})
+                                                </p>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </ScrollArea>
+                            ) : (
+                                <p className="text-sm text-muted-foreground text-center">No questions submitted yet.</p>
+                            )}
+                        </CardContent>
+                    </Card>
+                  </>
                 )}
             </section>
         </div>
@@ -954,6 +1016,5 @@ export default function SessionPage() {
     </main>
   );
 }
-
 
     
