@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue, increment, getDoc, FirebaseError } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -37,7 +37,6 @@ import {
     FileText, MessageCircleQuestion
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FirebaseError } from 'firebase/app';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDistanceToNow } from 'date-fns';
@@ -55,7 +54,7 @@ interface KeyTakeaway {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: Timestamp; // Read as Timestamp
+    submittedAt: Timestamp; 
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -63,7 +62,7 @@ interface KeyTakeawayWrite {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: FieldValue; // Written as FieldValue (serverTimestamp())
+    submittedAt: FieldValue; 
 }
 
 // Interface for data READ from Firestore
@@ -71,7 +70,7 @@ interface Question {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: Timestamp; // Read as Timestamp
+    submittedAt: Timestamp; 
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -79,7 +78,7 @@ interface QuestionWrite {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: FieldValue; // Written as FieldValue (serverTimestamp())
+    submittedAt: FieldValue; 
 }
 
 interface SessionData {
@@ -98,8 +97,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[]; // Uses the "Read" interface
-  questions?: Question[];     // Uses the "Read" interface
+  keyTakeaways?: KeyTakeaway[]; 
+  questions?: Question[];     
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -433,9 +432,14 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() // Assign FieldValue directly
+            submittedAt: serverTimestamp()
         };
         
+        console.log("Submitting Key Takeaway Object:", JSON.stringify(newTakeaway, null, 2));
+        // For more detailed inspection of FieldValue, log newTakeaway directly without JSON.stringify
+        console.log("Actual Key Takeaway object for Firestore:", newTakeaway);
+
+
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
         });
@@ -464,12 +468,16 @@ export default function SessionPage() {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
         
-        const newQuestion: QuestionWrite = { // Use QuestionWrite interface
+        const newQuestion: QuestionWrite = { 
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp() // Assign FieldValue directly
+            submittedAt: serverTimestamp()
         };
+
+        console.log("Submitting Question Object:", JSON.stringify(newQuestion, null, 2));
+        // For more detailed inspection of FieldValue, log newQuestion directly without JSON.stringify
+        console.log("Actual Question object for Firestore:", newQuestion);
 
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -640,8 +648,8 @@ export default function SessionPage() {
             "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
         )}>
             
-            {/* Left Column: Nickname, Leaderboard */}
-            <section className={cn(
+            {/* Left Column */}
+             <section className={cn(
                 "space-y-4",
                 isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
             )}>
@@ -675,7 +683,7 @@ export default function SessionPage() {
                 />
             </section>
 
-            {/* Right Column: Participants, Admin Controls/Submissions */}
+            {/* Right Column */}
             <section className={cn(
                 "space-y-4",
                  isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
@@ -1078,3 +1086,5 @@ export default function SessionPage() {
     </main>
   );
 }
+
+    
