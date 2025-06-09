@@ -104,7 +104,7 @@ export default function SessionPage() {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (!user) {
-         setNicknameInput('');
+         setNicknameInput(''); // Clear nickname input if user logs out or becomes null
       }
     });
     return () => unsubscribeAuth();
@@ -125,7 +125,9 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
-        if (data.presenterQueue && presenterQueueInput === '' && !data.sessionEnded) {
+        // Initialize presenterQueueInput only once from sessionData if it's currently empty and session not ended
+        // This prevents overwriting admin's current edits in the textarea
+        if (presenterQueueInput === '' && data.presenterQueue && !data.sessionEnded) {
            setPresenterQueueInput(data.presenterQueue.join('\n'));
         }
 
@@ -145,13 +147,12 @@ export default function SessionPage() {
       setIsLoading(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast]);
+  }, [sessionId, router, toast]); // Removed nicknameInput from dependencies
 
+  // Dedicated useEffect to pre-fill nicknameInput if it's empty and sessionData has a nickname for the user
   useEffect(() => {
-    if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname) {
-      if (nicknameInput === '') { 
-        setNicknameInput(sessionData.participants[currentUser.uid].nickname);
-      }
+    if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname && nicknameInput === '') {
+      setNicknameInput(sessionData.participants[currentUser.uid].nickname);
     }
   }, [currentUser, sessionData, nicknameInput]);
 
@@ -207,36 +208,11 @@ export default function SessionPage() {
     handleAdminAction(
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
-        // If a specific presenter is active, or if the queue is set but not started, this toggle applies to them.
-        // If the queue is empty, it's a general round toggle.
-        // If the queue has ended, this button should ideally be disabled or have different logic.
-        // For now, it simply toggles isRoundActive. The impact of this toggle is contextualized by presenter status.
-
-        // Determine if scores should reset: only if opening a general round OR opening for the first presenter in a fresh queue.
-        let shouldResetScores = false;
-        if (!sessionData!.isRoundActive) { // Only consider reset if we are *opening* the round
-            if (isPresenterQueueEffectivelyEmpty || 
-                (sessionData?.presenterQueue && sessionData.presenterQueue.length > 0 && (sessionData.currentPresenterIndex === -1 || sessionData.currentPresenterIndex === 0))) {
-                 // If it's a general round, or we are about to start the first presenter (index -1 moving to 0, or already at 0 but round was closed).
-                 // Actually, the "Set Presenter Queue" and "Next Presenter" handle score resets.
-                 // This "Toggle Round" should probably *not* reset scores unless it's explicitly a "Start Round & Reset" action.
-                 // For now, let's simplify: toggle round just toggles. Score resets are handled by presenter changes or "Clear Scores".
-            }
-        }
-        
         const updateData: { isRoundActive: boolean; likeClicks?: number; dislikeClicks?: number } = {
              isRoundActive: !sessionData!.isRoundActive
         };
 
-        // if (shouldResetScores) {
-        //     updateData.likeClicks = 0;
-        //     updateData.dislikeClicks = 0;
-        //     if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
-        // }
-        if (!sessionData!.isRoundActive && !isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData!.currentPresenterIndex === -1) {
-            // If opening a round and no presenter is active yet (queue is set, index is -1),
-            // this means we're starting a general feedback round *before* the first presenter.
-            // Scores for this general round should also be fresh.
+        if (!sessionData!.isRoundActive && (isPresenterQueueEffectivelyEmpty || sessionData!.currentPresenterIndex === -1)) {
             updateData.likeClicks = 0;
             updateData.dislikeClicks = 0;
              if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
@@ -244,7 +220,7 @@ export default function SessionPage() {
 
 
         await updateDoc(sessionDocRef, updateData);
-        if (!sessionData!.isRoundActive && typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`); // Reset vote if opening round
+        if (!sessionData!.isRoundActive && typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
 
       },
       `Feedback round is now ${!sessionData!.isRoundActive ? 'OPEN' : 'CLOSED'}.`,
@@ -310,7 +286,7 @@ export default function SessionPage() {
   }
 
  const executeEndSession = async () => {
-    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
+    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
       setShowEndSessionDialog(false);
       return;
     }
@@ -319,7 +295,7 @@ export default function SessionPage() {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      setShowEndSessionDialog(false); // Close dialog on success
+      setShowEndSessionDialog(false);
       router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -327,10 +303,8 @@ export default function SessionPage() {
       if (error instanceof FirebaseError) errorMessage = `Could not end session: ${error.message} (Code: ${error.code})`;
       else if (error instanceof Error) errorMessage = `Could not end session: ${error.message}`;
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
-      // setShowEndSessionDialog(false); // Also close on error if desired, or leave open
     } finally {
-      setIsProcessingAdminAction(false); // Ensure this is always called
-      // setShowEndSessionDialog(false); // Optionally ensure dialog closes if not already
+      setIsProcessingAdminAction(false);
     }
   };
 
@@ -349,19 +323,15 @@ export default function SessionPage() {
                 newPresenterName = newQueue[0];
                 newPresenterIndex = 0;
                 roundActive = true; 
-            } else {
-                // If queue is cleared, reset presenter info and close general round unless admin explicitly opens it.
-                // Scores are already reset below.
-                // The admin can use "Open Feedback Round" for a general session if desired.
             }
-
+            
             await updateDoc(sessionDocRef, {
                 presenterQueue: newQueue,
                 currentPresenterIndex: newPresenterIndex,
                 currentPresenterName: newPresenterName,
                 likeClicks: 0, 
                 dislikeClicks: 0, 
-                isRoundActive: roundActive, // Round is active if queue has presenters, false if queue is empty
+                isRoundActive: roundActive,
             });
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
         },
@@ -540,31 +510,29 @@ export default function SessionPage() {
       presenterDisplayMessage = "Presenter queue finished.";
       sessionStatusMessage = "Feedback round is CLOSED.";
   } else if (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1) {
-      // Queue is set, but no presenter has started yet (index is -1)
       presenterDisplayMessage = "Presenter queue is set.";
       sessionStatusMessage = isCurrentUserAdmin ? 
           (sessionData.isRoundActive ? "General feedback round is OPEN. You can also start the presentations." : "Admin can start the presentations or open a general feedback round.") :
           (sessionData.isRoundActive ? "General feedback round is OPEN." : "Waiting for admin to start presentations or open a general round.");
-  } else { // isPresenterQueueEffectivelyEmpty (or an unexpected state where queue is defined but index is invalidly not -1)
+  } else { 
       presenterDisplayMessage = isCurrentUserAdmin ? "No presenter list. Run a general feedback round or add presenters." : "General feedback session.";
       sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is CLOSED.";
   }
 
 
   const disableOpenCloseRoundButton = isProcessingAdminAction || 
-                                   (isSpecificPresenterActive && sessionData.currentPresenterName === "End of Queue") || // Queue ended
-                                   (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== -1 && !isSpecificPresenterActive); // Presenter mode, but specific presenter is not active (e.g. queue ended, or just before first presenter)
-                                                                                             // This condition might need refinement for the case where queue is set but not started.
+                                   (isSpecificPresenterActive && sessionData.currentPresenterName === "End of Queue") || 
+                                   (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== -1 && !isSpecificPresenterActive); 
 
   const disableClearScoresButton = isProcessingAdminAction || 
-                                (!sessionData.isRoundActive && !isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && !isPresenterQueueEffectivelyEmpty) || // general round closed before first presenter.
-                                (!sessionData.isRoundActive && isPresenterQueueEffectivelyEmpty) || // general round closed
-                                (sessionData.currentPresenterName === "End of Queue"); // queue ended
+                                (!sessionData.isRoundActive && !isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && !isPresenterQueueEffectivelyEmpty) || 
+                                (!sessionData.isRoundActive && isPresenterQueueEffectivelyEmpty) || 
+                                (sessionData.currentPresenterName === "End of Queue"); 
 
   const nextPresenterButtonDisabled = isProcessingAdminAction || 
                                    isPresenterQueueEffectivelyEmpty || 
                                    isQueueAtEnd || 
-                                   sessionData.currentPresenterIndex === -1; // Not started yet
+                                   sessionData.currentPresenterIndex === -1; 
 
   return (
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
@@ -598,9 +566,9 @@ export default function SessionPage() {
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             {/* Left Column (Participant Interactions) */}
-            <section className="lg:col-span-3 space-y-6">
+            <section className="lg:col-span-7 space-y-6">
                 {!isCurrentUserAdmin && !sessionData.sessionEnded && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
@@ -686,7 +654,7 @@ export default function SessionPage() {
             </section>
 
             {/* Right Column (Admin Controls & Participant List) */}
-            <section className="lg:col-span-2 space-y-6">
+            <section className="lg:col-span-5 space-y-6">
                 {participantList.length > 0 && (
                     <Card className="w-full shadow-lg">
                         <CardHeader>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -70,7 +71,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
 
   if (loading) {
     return (
-      <Card className="w-full max-w-md shadow-lg">
+      <Card className="w-full shadow-lg">
         <CardHeader>
           <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
             <Presentation className="mr-2 h-6 w-6" />
@@ -99,7 +100,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
 
   if (!resultsVisible) {
     return (
-      <Card className="w-full max-w-md shadow-lg">
+      <Card className="w-full shadow-lg">
         <CardHeader>
           <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
              <Presentation className="mr-2 h-6 w-6" />
@@ -116,7 +117,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
   
   if (showGeneralOrWaitingMessage && !currentPresenterName) { // Catches "General Session" or "Waiting for admin if queue is defined but not started"
      return (
-      <Card className="w-full max-w-md shadow-lg">
+      <Card className="w-full shadow-lg">
         <CardHeader>
           <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
             <Presentation className="mr-2 h-6 w-6" />
@@ -150,7 +151,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
 
   if (showQueueEndedMessage) {
     return (
-      <Card className="w-full max-w-md shadow-lg">
+      <Card className="w-full shadow-lg">
         <CardHeader>
           <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
             <Presentation className="mr-2 h-6 w-6" />
@@ -176,7 +177,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
 
 
   return (
-    <Card className="w-full max-w-md shadow-lg">
+    <Card className="w-full shadow-lg">
       <CardHeader>
         <CardTitle className="text-center text-2xl font-bold flex items-center justify-center">
             <Presentation className="mr-2 h-6 w-6" />
