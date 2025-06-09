@@ -110,7 +110,7 @@ export default function SessionPage() {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (!user) {
-         setNicknameInput(''); 
+         setNicknameInput('');
       }
     });
     return () => unsubscribeAuth();
@@ -151,13 +151,13 @@ export default function SessionPage() {
       setIsLoading(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast]); 
+  }, [sessionId, router, toast]);
 
   useEffect(() => {
     if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname && nicknameInput === '') {
       setNicknameInput(sessionData.participants[currentUser.uid].nickname);
     }
-  }, [currentUser, sessionData, nicknameInput]);
+  }, [currentUser, sessionData]);
 
 
   useEffect(() => {
@@ -298,7 +298,6 @@ export default function SessionPage() {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      // setIsProcessingAdminAction(false); // Set before redirect
       setShowEndSessionDialog(false);
       router.push('/');
     } catch (error) {
@@ -583,7 +582,7 @@ export default function SessionPage() {
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             {/* Left Column (Participant Interactions) */}
-            <section className="lg:col-span-7 space-y-6">
+            <section className="lg:col-span-6 space-y-6">
                 {!isCurrentUserAdmin && !sessionData.sessionEnded && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
@@ -659,7 +658,7 @@ export default function SessionPage() {
             </section>
 
             {/* Right Column (Admin Controls & Participant List) */}
-            <section className="lg:col-span-5 space-y-6">
+            <section className="lg:col-span-6 space-y-6">
                 {participantList.length > 0 && (
                     <Card className="w-full shadow-lg">
                         <CardHeader>
