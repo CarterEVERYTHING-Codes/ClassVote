@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -50,6 +50,7 @@ interface ParticipantData {
   joinedAt: Timestamp | any;
 }
 
+// Interface for data read from Firestore
 interface KeyTakeaway {
     userId: string;
     nickname: string;
@@ -57,11 +58,28 @@ interface KeyTakeaway {
     submittedAt: Timestamp;
 }
 
+// Interface for data written to Firestore
+interface KeyTakeawayWrite {
+    userId: string;
+    nickname: string;
+    takeaway: string;
+    submittedAt: FieldValue;
+}
+
+// Interface for data read from Firestore
 interface Question {
     userId: string;
     nickname: string;
     questionText: string;
     submittedAt: Timestamp;
+}
+
+// Interface for data written to Firestore
+interface QuestionWrite {
+    userId: string;
+    nickname: string;
+    questionText: string;
+    submittedAt: FieldValue;
 }
 
 interface SessionData {
@@ -80,8 +98,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[];
-  questions?: Question[];
+  keyTakeaways?: KeyTakeaway[]; // Array of KeyTakeaway (read type)
+  questions?: Question[]; // Array of Question (read type)
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -301,8 +319,6 @@ export default function SessionPage() {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      // setIsProcessingAdminAction(false); // Moved to finally
-      router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
       let errorMessage = "Could not end session. Please try again.";
@@ -312,6 +328,9 @@ export default function SessionPage() {
     } finally {
       setIsProcessingAdminAction(false);
       setShowEndSessionDialog(false);
+      if (sessionData && sessionData.adminUid === currentUser?.uid) { // Ensure only admin redirects
+          router.push('/');
+      }
     }
   };
 
@@ -401,11 +420,11 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-        const newTakeaway: KeyTakeaway = {
+        const newTakeaway: KeyTakeawayWrite = { // Use KeyTakeawayWrite
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() as Timestamp
+            submittedAt: serverTimestamp() // Use serverTimestamp() directly
         };
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
@@ -428,11 +447,11 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-        const newQuestion: Question = {
+        const newQuestion: QuestionWrite = { // Use QuestionWrite
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp() as Timestamp
+            submittedAt: serverTimestamp() // Use serverTimestamp() directly
         };
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -593,11 +612,13 @@ export default function SessionPage() {
         )}
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start">
-            {/* Left Column */}
+         <div className={cn(
+            "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
+        )}>
+             {/* Left Column */}
             <section className={cn(
                 "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" // Adjusted for better balance
+                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
             )}>
                 {!isCurrentUserAdmin && !sessionData.sessionEnded && (
                     <Card className="w-full shadow-md">
@@ -627,35 +648,8 @@ export default function SessionPage() {
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                 />
-            </section>
 
-            {/* Right Column */}
-            <section className={cn(
-                "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5" // Adjusted for better balance
-            )}>
-                {(participantList.length > 0 || isCurrentUserAdmin) && (
-                    <Card className="w-full shadow-lg">
-                        <CardHeader>
-                            <CardTitle className="text-xl font-bold flex items-center justify-center">
-                            <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <ScrollArea className="h-40">
-                            <ul className="space-y-1">
-                                {participantList.map(p => (
-                                <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
-                                    {p.nickname || 'Anonymous User'}
-                                </li>
-                                ))}
-                            </ul>
-                            </ScrollArea>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {!isCurrentUserAdmin && !sessionData.sessionEnded && sessionData.keyTakeawaysEnabled && (
+                 {!isCurrentUserAdmin && !sessionData.sessionEnded && sessionData.keyTakeawaysEnabled && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
                             <CardTitle className="text-xl flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary" />Submit Key Takeaway</CardTitle>
@@ -698,6 +692,34 @@ export default function SessionPage() {
                         </CardContent>
                     </Card>
                 )}
+            </section>
+
+            {/* Right Column */}
+            <section className={cn(
+                "space-y-4",
+                isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
+            )}>
+                 {(participantList.length > 0 || isCurrentUserAdmin) && (
+                    <Card className="w-full shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-xl font-bold flex items-center justify-center">
+                            <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <ScrollArea className="h-40">
+                            <ul className="space-y-1">
+                                {participantList.map(p => (
+                                <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                                    {p.nickname || 'Anonymous User'}
+                                </li>
+                                ))}
+                            </ul>
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>
+                )}
+
 
                 {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
                   <>
@@ -1032,4 +1054,3 @@ export default function SessionPage() {
   );
 }
 
-    
