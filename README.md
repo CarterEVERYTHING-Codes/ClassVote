@@ -15,7 +15,7 @@ ClassVote is a real-time, interactive web application where users can create or 
 1.  **Clone the Repository:**
     ```bash
     git clone <your-repository-url>
-    cd <repository-name> 
+    cd <repository-name>
     ```
     (Replace `<repository-name>` with the actual name of your repository folder, e.g., `classvote`)
 
@@ -38,8 +38,8 @@ ClassVote is a real-time, interactive web application where users can create or 
           match /databases/{database}/documents {
             match /sessions/{sessionId} {
               allow read: if request.auth != null;
-              
-              allow create: if request.auth != null && 
+
+              allow create: if request.auth != null &&
                                request.resource.data.adminUid == request.auth.uid &&
                                request.resource.data.likeClicks == 0 &&
                                request.resource.data.dislikeClicks == 0 &&
@@ -47,8 +47,9 @@ ClassVote is a real-time, interactive web application where users can create or 
                                request.resource.data.sessionEnded == false &&
                                request.resource.data.soundsEnabled == true &&
                                request.resource.data.resultsVisible == true &&
-                               request.resource.data.participants is map && // Ensure participants is a map
-                               request.resource.data.participants.size() == 0; // Ensure participants is empty on creation
+                               request.resource.data.sessionType == 'quick' && // Ensure sessionType is set on create
+                               request.resource.data.participants is map &&
+                               request.resource.data.participants.size() == 0;
 
 
               allow update: if request.auth != null && resource.data.sessionEnded == false && (
@@ -71,9 +72,10 @@ ClassVote is a real-time, interactive web application where users can create or 
                                   // Toggle resultsVisible
                                   (request.resource.data.resultsVisible != resource.data.resultsVisible)
                                 ) &&
-                                // Ensure admin doesn't change other critical fields during these specific actions, except participants map
+                                // Ensure admin doesn't change other critical fields during these specific actions, except participants map and sessionType
                                 request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.createdAt == resource.data.createdAt &&
+                                request.resource.data.sessionType == resource.data.sessionType && // sessionType should not be changed by these admin actions
                                 (request.resource.data.participants == resource.data.participants || (request.resource.data.participants is map && resource.data.participants is map && request.resource.data.participants.diff(resource.data.participants).affectedKeys().size() > 0) || (!(resource.data.participants is map) && request.resource.data.participants is map)) // Allow admin to modify participants
                               ) ||
                               // User voting actions
@@ -84,12 +86,13 @@ ClassVote is a real-time, interactive web application where users can create or 
                                   (request.resource.data.dislikeClicks == resource.data.dislikeClicks + 1 && request.resource.data.likeClicks == resource.data.likeClicks)
                                 ) &&
                                 // Ensure other critical fields are not changed by vote updates
-                                request.resource.data.adminUid == resource.data.adminUid && 
+                                request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.isRoundActive == resource.data.isRoundActive &&
-                                request.resource.data.sessionEnded == resource.data.sessionEnded && // Check against existing sessionEnded
+                                request.resource.data.sessionEnded == resource.data.sessionEnded &&
                                 request.resource.data.createdAt == resource.data.createdAt &&
                                 request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                 request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                request.resource.data.sessionType == resource.data.sessionType && // sessionType should not be changed by voting
                                 request.resource.data.participants == resource.data.participants // Participants map not changed by voting
                               ) ||
                               // User updating their own nickname in participants map
@@ -113,10 +116,11 @@ ClassVote is a real-time, interactive web application where users can create or 
                                 request.resource.data.isRoundActive == resource.data.isRoundActive &&
                                 request.resource.data.likeClicks == resource.data.likeClicks &&
                                 request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                request.resource.data.sessionEnded == resource.data.sessionEnded && // Ensures user doesn't change sessionEnded
+                                request.resource.data.sessionEnded == resource.data.sessionEnded &&
                                 request.resource.data.createdAt == resource.data.createdAt &&
                                 request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                request.resource.data.resultsVisible == resource.data.resultsVisible
+                                request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                request.resource.data.sessionType == resource.data.sessionType // sessionType must remain unchanged
                               )
                             );
             }
@@ -132,14 +136,14 @@ ClassVote is a real-time, interactive web application where users can create or 
 
 ## Key Features
 
-*   Create new voting sessions with a unique 6-digit code.
+*   Create new voting sessions with a unique 6-digit code ("Quick Session" or "Full Features" options).
 *   Join existing sessions using the code.
 *   Real-time "like" and "dislike" voting.
-*   Optional interactive sound feedback for votes (admin controlled).
+*   Admin controls for vote sounds (on/off) and live results visibility (show/hide).
 *   Live leaderboard displaying current scores (admin can hide/reveal).
-*   Admin controls to start/stop feedback rounds, clear scores, toggle sounds, toggle results visibility, and end sessions.
+*   Admin controls to start/stop feedback rounds, clear scores, and end sessions.
 *   Participants can set a session-specific nickname.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
-*   Anonymous user authentication via Firebase.
+*   Anonymous user authentication via Firebase for quick sessions.
 
-    
+```
