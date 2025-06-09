@@ -47,39 +47,39 @@ import { cn } from "@/lib/utils";
 
 interface ParticipantData {
   nickname: string;
-  joinedAt: Timestamp | any;
+  joinedAt: Timestamp | any; // 'any' for flexibility if serverTimestamp() initially makes it a FieldValue before resolution
 }
 
-// Interface for data read from Firestore
+// Interface for data READ from Firestore
 interface KeyTakeaway {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: Timestamp;
+    submittedAt: Timestamp; // When read, it's a resolved Timestamp
 }
 
-// Interface for data written to Firestore
+// Interface for data WRITTEN to Firestore via arrayUnion
 interface KeyTakeawayWrite {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: FieldValue;
+    submittedAt: FieldValue; // When writing, use FieldValue for serverTimestamp()
 }
 
-// Interface for data read from Firestore
+// Interface for data READ from Firestore
 interface Question {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: Timestamp;
+    submittedAt: Timestamp; // When read, it's a resolved Timestamp
 }
 
-// Interface for data written to Firestore
+// Interface for data WRITTEN to Firestore via arrayUnion
 interface QuestionWrite {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: FieldValue;
+    submittedAt: FieldValue; // When writing, use FieldValue for serverTimestamp()
 }
 
 interface SessionData {
@@ -98,8 +98,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[]; // Array of KeyTakeaway (read type)
-  questions?: Question[]; // Array of Question (read type)
+  keyTakeaways?: KeyTakeaway[]; // Uses the READ interface
+  questions?: Question[];     // Uses the READ interface
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -179,7 +179,7 @@ export default function SessionPage() {
     if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname && nicknameInput === '') {
       setNicknameInput(sessionData.participants[currentUser.uid].nickname);
     }
-  }, [currentUser, sessionData]);
+  }, [currentUser, sessionData, nicknameInput]);
 
 
   useEffect(() => {
@@ -314,11 +314,17 @@ export default function SessionPage() {
     setIsProcessingAdminAction(true);
     try {
       if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
+        setShowEndSessionDialog(false);
+        setIsProcessingAdminAction(false);
         return;
       }
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
+      // Redirect only if current user is admin, after all operations
+      if (sessionData && sessionData.adminUid === currentUser?.uid) {
+          router.push('/');
+      }
     } catch (error) {
       console.error("Error ending session details: ", error);
       let errorMessage = "Could not end session. Please try again.";
@@ -328,9 +334,14 @@ export default function SessionPage() {
     } finally {
       setIsProcessingAdminAction(false);
       setShowEndSessionDialog(false);
-      if (sessionData && sessionData.adminUid === currentUser?.uid) { // Ensure only admin redirects
-          router.push('/');
-      }
+      // Ensure redirection logic here is conditional if not already handled above
+       if (sessionData && sessionData.adminUid === currentUser?.uid && sessionData.sessionEnded) {
+          // This check might be redundant if router.push is in try block on success
+          // but ensures admin is redirected if session becomes ended.
+          if (router.asPath.startsWith('/session/')) { // Avoid pushing if already navigating away
+            router.push('/');
+          }
+       }
     }
   };
 
@@ -403,6 +414,7 @@ export default function SessionPage() {
   const isSpecificPresenterActive = !isPresenterQueueEffectivelyEmpty &&
                                  sessionData?.currentPresenterIndex !== undefined &&
                                  sessionData.currentPresenterIndex >= 0 &&
+                                 sessionData.currentPresenterQueue!.length > 0 && // Ensure queue is not empty
                                  sessionData.currentPresenterIndex < sessionData.presenterQueue!.length &&
                                  sessionData.currentPresenterName !== "" &&
                                  sessionData.currentPresenterName !== "End of Queue";
@@ -420,11 +432,11 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-        const newTakeaway: KeyTakeawayWrite = { // Use KeyTakeawayWrite
+        const newTakeaway: KeyTakeawayWrite = { 
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() // Use serverTimestamp() directly
+            submittedAt: serverTimestamp() 
         };
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
@@ -433,7 +445,11 @@ export default function SessionPage() {
         setTakeawayInput('');
     } catch (error) {
         console.error("Error submitting takeaway: ", error);
-        toast({ title: "Error", description: "Could not submit takeaway.", variant: "destructive" });
+        let desc = "Could not submit takeaway.";
+        if (error instanceof FirebaseError && error.message.includes("arrayUnion() called with invalid data")) {
+            desc = "There was an issue submitting your takeaway. Please try again. (Error: FT01)";
+        }
+        toast({ title: "Error", description: desc, variant: "destructive" });
     }
     setIsSubmittingTakeaway(false);
   };
@@ -447,11 +463,11 @@ export default function SessionPage() {
     try {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
-        const newQuestion: QuestionWrite = { // Use QuestionWrite
+        const newQuestion: QuestionWrite = {
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp() // Use serverTimestamp() directly
+            submittedAt: serverTimestamp()
         };
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -460,7 +476,11 @@ export default function SessionPage() {
         setQuestionInput('');
     } catch (error) {
         console.error("Error submitting question: ", error);
-        toast({ title: "Error", description: "Could not submit question.", variant: "destructive" });
+        let desc = "Could not submit question.";
+         if (error instanceof FirebaseError && error.message.includes("arrayUnion() called with invalid data")) {
+            desc = "There was an issue submitting your question. Please try again. (Error: FQ01)";
+        }
+        toast({ title: "Error", description: desc, variant: "destructive" });
     }
     setIsSubmittingQuestion(false);
   };
@@ -528,8 +548,8 @@ export default function SessionPage() {
 
   const isQueueAtEnd = !isPresenterQueueEffectivelyEmpty &&
                        sessionData.currentPresenterIndex !== undefined &&
-                       sessionData.currentPresenterIndex >= sessionData.presenterQueue!.length -1 &&
-                       sessionData.presenterQueue!.length > 0;
+                       sessionData.presenterQueue!.length > 0 && // Ensure queue is not empty before checking index
+                       sessionData.currentPresenterIndex >= sessionData.presenterQueue!.length -1;
 
 
   let sessionStatusMessage = "";
@@ -569,7 +589,6 @@ export default function SessionPage() {
   return (
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
       <TooltipProvider>
-        {/* Header Section */}
         <div className="text-center mb-6 relative">
             <div className="absolute top-0 right-0">
                 <ThemeToggleButton />
@@ -600,7 +619,6 @@ export default function SessionPage() {
             )}
         </div>
 
-        {/* Vote Buttons - Moved to Top */}
         {!sessionData.sessionEnded && (
             <div className="mb-8 flex justify-center">
                 <GoodBadButtonsLoader
@@ -611,16 +629,15 @@ export default function SessionPage() {
             </div>
         )}
 
-        {/* Main Content Grid */}
-         <div className={cn(
+        <div className={cn(
             "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
         )}>
-             {/* Left Column */}
+            {/* Left Column */}
             <section className={cn(
                 "space-y-4",
                 isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
             )}>
-                {!isCurrentUserAdmin && !sessionData.sessionEnded && (
+                {!isCurrentUserAdmin && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
                             <CardTitle className="text-xl">Set Your Nickname</CardTitle>
@@ -649,7 +666,7 @@ export default function SessionPage() {
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                 />
 
-                 {!isCurrentUserAdmin && !sessionData.sessionEnded && sessionData.keyTakeawaysEnabled && (
+                 {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
                             <CardTitle className="text-xl flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary" />Submit Key Takeaway</CardTitle>
@@ -662,32 +679,10 @@ export default function SessionPage() {
                                 placeholder="Enter your key takeaway..."
                                 maxLength={MAX_TAKEAWAY_LENGTH}
                                 rows={3}
-                                disabled={isSubmittingTakeaway || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled}
+                                disabled={isSubmittingTakeaway || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}
                             />
-                            <Button onClick={handleSubmitTakeaway} className="w-full" disabled={isSubmittingTakeaway || !takeawayInput.trim() || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled}>
+                            <Button onClick={handleSubmitTakeaway} className="w-full" disabled={isSubmittingTakeaway || !takeawayInput.trim() || !feedbackSubmissionAllowed || !sessionData.keyTakeawaysEnabled || sessionData.sessionEnded}>
                                 {isSubmittingTakeaway ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Takeaway</>}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {!isCurrentUserAdmin && !sessionData.sessionEnded && sessionData.qnaEnabled && (
-                    <Card className="w-full shadow-md">
-                        <CardHeader>
-                            <CardTitle className="text-xl flex items-center"><MessageSquarePlus className="mr-2 h-5 w-5 text-primary" />Ask a Question</CardTitle>
-                            <CardDescription>Submit a question. (Max {MAX_QUESTION_LENGTH} chars)</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <Textarea
-                                value={questionInput}
-                                onChange={(e) => setQuestionInput(e.target.value.slice(0, MAX_QUESTION_LENGTH))}
-                                placeholder="Enter your question..."
-                                maxLength={MAX_QUESTION_LENGTH}
-                                rows={3}
-                                disabled={isSubmittingQuestion || !feedbackSubmissionAllowed || !sessionData.qnaEnabled}
-                            />
-                            <Button onClick={handleSubmitQuestion} className="w-full" disabled={isSubmittingQuestion || !questionInput.trim() || !feedbackSubmissionAllowed || !sessionData.qnaEnabled}>
-                                {isSubmittingQuestion ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Question</>}
                             </Button>
                         </CardContent>
                     </Card>
@@ -716,6 +711,28 @@ export default function SessionPage() {
                                 ))}
                             </ul>
                             </ScrollArea>
+                        </CardContent>
+                    </Card>
+                )}
+                
+                {!isCurrentUserAdmin && sessionData.qnaEnabled && (
+                     <Card className="w-full shadow-md">
+                        <CardHeader>
+                            <CardTitle className="text-xl flex items-center"><MessageSquarePlus className="mr-2 h-5 w-5 text-primary" />Ask a Question</CardTitle>
+                            <CardDescription>Submit a question. (Max {MAX_QUESTION_LENGTH} chars)</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <Textarea
+                                value={questionInput}
+                                onChange={(e) => setQuestionInput(e.target.value.slice(0, MAX_QUESTION_LENGTH))}
+                                placeholder="Enter your question..."
+                                maxLength={MAX_QUESTION_LENGTH}
+                                rows={3}
+                                disabled={isSubmittingQuestion || !feedbackSubmissionAllowed || !sessionData.qnaEnabled || sessionData.sessionEnded}
+                            />
+                            <Button onClick={handleSubmitQuestion} className="w-full" disabled={isSubmittingQuestion || !questionInput.trim() || !feedbackSubmissionAllowed || !sessionData.qnaEnabled || sessionData.sessionEnded}>
+                                {isSubmittingQuestion ? 'Submitting...' : <><Send className="mr-2 h-4 w-4"/>Submit Question</>}
+                            </Button>
                         </CardContent>
                     </Card>
                 )}
@@ -1005,7 +1022,6 @@ export default function SessionPage() {
             </section>
         </div>
 
-        {/* Footer Buttons Section */}
         <div className="mt-12 flex justify-center">
             {isCurrentUserAdmin && sessionData && sessionData.sessionEnded && (
                 <Card className="w-full max-w-md shadow-lg">
@@ -1053,4 +1069,3 @@ export default function SessionPage() {
     </main>
   );
 }
-
