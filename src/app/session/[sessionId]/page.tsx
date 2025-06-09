@@ -54,7 +54,7 @@ interface KeyTakeaway {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: Timestamp;
+    submittedAt: Timestamp; // For reading
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -62,7 +62,7 @@ interface KeyTakeawayWrite {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: FieldValue;
+    submittedAt: FieldValue; // For writing
 }
 
 // Interface for data READ from Firestore
@@ -70,7 +70,7 @@ interface Question {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: Timestamp;
+    submittedAt: Timestamp; // For reading
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -78,7 +78,7 @@ interface QuestionWrite {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: FieldValue;
+    submittedAt: FieldValue; // For writing
 }
 
 interface SessionData {
@@ -97,8 +97,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[];
-  questions?: Question[];
+  keyTakeaways?: KeyTakeaway[]; // Array of read types
+  questions?: Question[]; // Array of read types
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -428,25 +428,26 @@ export default function SessionPage() {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
 
-        const newTakeaway: KeyTakeawayWrite = {
+        // Construct a plain object literal for arrayUnion
+        const takeawayToAdd = {
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp()
+            submittedAt: serverTimestamp() // FieldValue sentinel
         };
 
-        console.log("Submitting Key Takeaway Object (raw):", newTakeaway);
+        console.log("Submitting Key Takeaway Object (raw literal):", takeawayToAdd);
 
         await updateDoc(sessionDocRef, {
-            keyTakeaways: arrayUnion(newTakeaway)
+            keyTakeaways: arrayUnion(takeawayToAdd)
         });
         toast({ title: "Takeaway Submitted!", description: "Your key takeaway has been recorded." });
         setTakeawayInput('');
     } catch (error) {
-        console.error("Error submitting takeaway: ", error);
+        console.error("Error submitting takeaway:", error);
         let description = "Could not submit takeaway. Please try again.";
         if (error instanceof FirestoreError) {
-            description = `Firebase Error: ${error.message} (Code: ${error.code})`;
+            description = `Error: ${error.message} (Code: ${error.code})`;
         } else if (error instanceof Error) {
             description = `Error: ${error.message}`;
         }
@@ -465,25 +466,26 @@ export default function SessionPage() {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         const userNickname = sessionData.participants?.[currentUser.uid]?.nickname || "Anonymous";
 
-        const newQuestion: QuestionWrite = {
+        // Construct a plain object literal for arrayUnion
+        const questionToAdd = {
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp()
+            submittedAt: serverTimestamp() // FieldValue sentinel
         };
 
-        console.log("Submitting Question Object (raw):", newQuestion);
+        console.log("Submitting Question Object (raw literal):", questionToAdd);
 
         await updateDoc(sessionDocRef, {
-            questions: arrayUnion(newQuestion)
+            questions: arrayUnion(questionToAdd)
         });
         toast({ title: "Question Submitted!", description: "Your question has been recorded." });
         setQuestionInput('');
     } catch (error) {
-        console.error("Error submitting question: ", error);
+        console.error("Error submitting question:", error);
         let description = "Could not submit question. Please try again.";
         if (error instanceof FirestoreError) {
-            description = `Firebase Error: ${error.message} (Code: ${error.code})`;
+            description = `Error: ${error.message} (Code: ${error.code})`;
         } else if (error instanceof Error) {
             description = `Error: ${error.message}`;
         }
@@ -1077,5 +1079,3 @@ export default function SessionPage() {
     </main>
   );
 }
-
-    
