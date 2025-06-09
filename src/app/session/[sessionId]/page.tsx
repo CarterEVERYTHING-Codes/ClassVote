@@ -55,7 +55,7 @@ interface KeyTakeaway {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: Timestamp;
+    submittedAt: Timestamp; // Read as Timestamp
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -63,7 +63,7 @@ interface KeyTakeawayWrite {
     userId: string;
     nickname: string;
     takeaway: string;
-    submittedAt: FieldValue; // Correct type for serverTimestamp()
+    submittedAt: FieldValue; // Written as FieldValue (serverTimestamp())
 }
 
 // Interface for data READ from Firestore
@@ -71,7 +71,7 @@ interface Question {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: Timestamp;
+    submittedAt: Timestamp; // Read as Timestamp
 }
 
 // Interface for data WRITTEN to Firestore via arrayUnion
@@ -79,7 +79,7 @@ interface QuestionWrite {
     userId: string;
     nickname: string;
     questionText: string;
-    submittedAt: FieldValue; // Correct type for serverTimestamp()
+    submittedAt: FieldValue; // Written as FieldValue (serverTimestamp())
 }
 
 interface SessionData {
@@ -98,8 +98,8 @@ interface SessionData {
   sessionType?: string;
   keyTakeawaysEnabled?: boolean;
   qnaEnabled?: boolean;
-  keyTakeaways?: KeyTakeaway[];
-  questions?: Question[];
+  keyTakeaways?: KeyTakeaway[]; // Array of KeyTakeaway (read interface)
+  questions?: Question[];     // Array of Question (read interface)
 }
 
 const MAX_TAKEAWAY_LENGTH = 280;
@@ -410,7 +410,7 @@ export default function SessionPage() {
   const isSpecificPresenterActive = !isPresenterQueueEffectivelyEmpty &&
                                  sessionData?.currentPresenterIndex !== undefined &&
                                  sessionData.currentPresenterIndex >= 0 &&
-                                 sessionData.currentPresenterQueue!.length > 0 && 
+                                 sessionData.presenterQueue!.length > 0 && 
                                  sessionData.currentPresenterIndex < sessionData.presenterQueue!.length &&
                                  sessionData.currentPresenterName !== "" &&
                                  sessionData.currentPresenterName !== "End of Queue";
@@ -433,10 +433,9 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             takeaway: takeawayInput.trim(),
-            submittedAt: serverTimestamp() // This returns FieldValue
+            submittedAt: serverTimestamp() // This returns FieldValue, correctly typed
         };
-        console.log("Submitting Key Takeaway:", JSON.stringify(newTakeaway, null, 2));
-        // Note: serverTimestamp() will appear as a function or special object in console, not a resolved date.
+        // console.log("Attempting to submit Key Takeaway:", newTakeaway); // Keep for debugging if needed
 
         await updateDoc(sessionDocRef, {
             keyTakeaways: arrayUnion(newTakeaway)
@@ -470,11 +469,9 @@ export default function SessionPage() {
             userId: currentUser.uid,
             nickname: userNickname,
             questionText: questionInput.trim(),
-            submittedAt: serverTimestamp() // This returns FieldValue
+            submittedAt: serverTimestamp() // This returns FieldValue, correctly typed
         };
-        console.log("Submitting Question:", JSON.stringify(newQuestion, null, 2));
-         // Note: serverTimestamp() will appear as a function or special object in console, not a resolved date.
-
+        // console.log("Attempting to submit Question:", newQuestion); // Keep for debugging if needed
 
         await updateDoc(sessionDocRef, {
             questions: arrayUnion(newQuestion)
@@ -595,9 +592,6 @@ export default function SessionPage() {
                                    isQueueAtEnd || 
                                    sessionData.currentPresenterIndex === -1; 
 
-  const leftColSpan = isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7";
-  const rightColSpan = isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5";
-
 
   return (
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
@@ -643,10 +637,14 @@ export default function SessionPage() {
         )}
 
         <div className={cn(
-            "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-4 items-start"
+            "grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 items-start"
         )}>
             
-             <section className={cn("space-y-4", isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7")}>
+            {/* Left Column */}
+            <section className={cn(
+                "space-y-4",
+                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
+            )}>
                 {!isCurrentUserAdmin && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
@@ -677,9 +675,12 @@ export default function SessionPage() {
                 />
             </section>
 
-            
-            <section className={cn("space-y-4", isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5")}>
-                 {(participantList.length > 0 || isCurrentUserAdmin) && (
+            {/* Right Column */}
+            <section className={cn(
+                "space-y-4",
+                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
+            )}>
+                 {(participantList.length > 0 || isCurrentUserAdmin) && ( // Show participants if list not empty OR if admin
                     <Card className="w-full shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-xl font-bold flex items-center justify-center">
@@ -700,6 +701,7 @@ export default function SessionPage() {
                     </Card>
                 )}
                 
+                {/* Non-Admin Submission Forms */}
                 {!isCurrentUserAdmin && sessionData.keyTakeawaysEnabled && (
                     <Card className="w-full shadow-md">
                         <CardHeader>
@@ -745,6 +747,7 @@ export default function SessionPage() {
                 )}
 
 
+                {/* Admin Controls and Displays */}
                 {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
                   <>
                     <Card className="w-full shadow-lg">
@@ -1076,6 +1079,5 @@ export default function SessionPage() {
     </main>
   );
 }
-
 
     
