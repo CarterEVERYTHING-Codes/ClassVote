@@ -237,6 +237,3 @@ ClassVote is a real-time, interactive web application where users can create or 
 *   Anonymous user authentication via Firebase for quick sessions.
 *   Informational tooltips for admin controls.
 
-```
-
-    
