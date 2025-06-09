@@ -1,8 +1,9 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp } from 'firebase/firestore'; 
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp } from 'firebase/firestore'; 
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth'; 
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -16,10 +17,11 @@ import { useToast } from '@/hooks/use-toast';
 import { Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FirebaseError } from 'firebase/app';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ParticipantData {
   nickname: string;
-  joinedAt: any; // Firestore Timestamp
+  joinedAt: Timestamp | any; // Firestore Timestamp or serverTimestamp placeholder
 }
 
 interface SessionData {
@@ -27,7 +29,7 @@ interface SessionData {
   isRoundActive: boolean;
   likeClicks: number;
   dislikeClicks: number;
-  createdAt: any; 
+  createdAt: Timestamp | any; 
   sessionEnded: boolean;
   soundsEnabled: boolean;
   resultsVisible: boolean;
@@ -53,6 +55,7 @@ export default function SessionPage() {
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
+      // Pre-fill nickname input if user has one and sessionData is loaded
       if (user && sessionData?.participants?.[user.uid]?.nickname) {
         setNicknameInput(sessionData.participants[user.uid].nickname);
       }
@@ -64,6 +67,7 @@ export default function SessionPage() {
     if (!sessionId) {
       setIsLoading(false);
       setError("No session ID provided.");
+      router.push('/'); // Redirect if no session ID
       return;
     }
 
@@ -84,7 +88,8 @@ export default function SessionPage() {
         }
       } else {
         setSessionData(null);
-        setError("This session cannot be found or has been ended by the admin.");
+        setError("This session cannot be found. It may have been ended or never existed.");
+        // Consider redirecting or showing a more prominent "not found" message.
       }
     }, (err) => {
       console.error("Error fetching session data: ", err);
@@ -94,7 +99,7 @@ export default function SessionPage() {
     });
 
     return () => unsubscribeFirestore();
-  }, [sessionId, toast, currentUser, nicknameInput]);
+  }, [sessionId, toast, currentUser, nicknameInput, router]);
 
   useEffect(() => {
     if (currentUser && sessionData) {
@@ -112,7 +117,7 @@ export default function SessionPage() {
     setIsSavingNickname(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
-      const newParticipantData = { 
+      const newParticipantData: ParticipantData = { 
         nickname: nicknameInput.trim(), 
         joinedAt: sessionData.participants?.[currentUser.uid]?.joinedAt || serverTimestamp() 
       };
@@ -145,7 +150,9 @@ export default function SessionPage() {
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         await updateDoc(sessionDocRef, { isRoundActive: !sessionData!.isRoundActive });
-        localStorage.removeItem(`hasVoted_${sessionId}`);
+        // Clear vote status for all potential participants when round changes
+        // This is a client-side convention, not a guarantee for all browsers/devices
+        if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
       },
       `Feedback round is now ${!sessionData!.isRoundActive ? 'OPEN' : 'CLOSED'}. Player votes reset.`,
       "Could not update feedback round status."
@@ -156,7 +163,7 @@ export default function SessionPage() {
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         await updateDoc(sessionDocRef, { likeClicks: 0, dislikeClicks: 0 });
-        localStorage.removeItem(`hasVoted_${sessionId}`);
+        if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
       },
       "Scores cleared and player votes reset.",
       "Could not clear scores."
@@ -198,7 +205,7 @@ export default function SessionPage() {
       else if (error instanceof Error) errorMessage = `Could not end session: ${error.message}`;
       console.error("Error ending session details: ", error);
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
-      setIsProcessingAdminAction(false);
+      setIsProcessingAdminAction(false); // Only set to false on error so redirect can happen
     }
   };
 
@@ -231,26 +238,30 @@ export default function SessionPage() {
         <h1 className="text-2xl font-bold text-destructive mb-2">Session Status</h1>
         <p className="text-muted-foreground mb-6">{error}</p>
          <Button onClick={() => router.push('/')} variant="outline">
-            <Home className="mr-2" /> Go to Homepage
+            <Home className="mr-2 h-4 w-4" /> Go to Homepage
         </Button>
       </main>
     );
   }
   
-  if (!sessionData) { 
+  if (!sessionData) { // Should be caught by the error block above if session not found.
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <p className="text-lg text-muted-foreground">Session data is currently unavailable or being loaded.</p>
+        <p className="text-lg text-muted-foreground">Session data is currently unavailable.</p>
         <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
-            <Home className="mr-2" /> Go to Homepage
+            <Home className="mr-2 h-4 w-4" /> Go to Homepage
         </Button>
       </main>
     );
   }
 
   const participantList = Object.entries(sessionData.participants || {})
-    .sort(([, a], [, b]) => (a.joinedAt?.toMillis?.() || 0) - (b.joinedAt?.toMillis?.() || 0))
-    .map(([uid, data]) => ({ uid, ...data }));
+    .map(([uid, data]) => ({ uid, ...data }))
+    .sort((a, b) => {
+        const timeA = a.joinedAt instanceof Timestamp ? a.joinedAt.toMillis() : (typeof a.joinedAt === 'number' ? a.joinedAt : 0);
+        const timeB = b.joinedAt instanceof Timestamp ? b.joinedAt.toMillis() : (typeof b.joinedAt === 'number' ? b.joinedAt : 0);
+        return timeA - timeB;
+    });
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-6 sm:p-12 md:p-16 bg-background space-y-8">
@@ -265,7 +276,7 @@ export default function SessionPage() {
         </div>
         <p className="text-lg sm:text-xl text-muted-foreground">
           {sessionData.isRoundActive ? "Feedback round is OPEN. " : "Feedback round is CLOSED. "}
-          Cast your vote!
+          {!sessionData.sessionEnded && "Cast your vote!"}
         </p>
       </div>
       
@@ -273,6 +284,7 @@ export default function SessionPage() {
         <Card className="w-full max-w-md shadow-md">
           <CardHeader>
             <CardTitle className="text-xl">Set Your Nickname</CardTitle>
+            <CardDescription>This will be shown to others in the session.</CardDescription>
           </CardHeader>
           <CardContent className="flex items-center space-x-2">
             <Input 
@@ -292,29 +304,33 @@ export default function SessionPage() {
 
       <Leaderboard sessionId={sessionId} resultsVisible={sessionData.resultsVisible} />
       
-      <div className="mt-8">
-        <GoodBadButtonsLoader 
-            sessionId={sessionId} 
-            isRoundActive={sessionData.isRoundActive && !sessionData.sessionEnded} 
-            soundsEnabled={sessionData.soundsEnabled}
-        />
-      </div>
+      {!sessionData.sessionEnded && (
+        <div className="mt-8">
+            <GoodBadButtonsLoader 
+                sessionId={sessionId} 
+                isRoundActive={sessionData.isRoundActive && !sessionData.sessionEnded} 
+                soundsEnabled={sessionData.soundsEnabled}
+            />
+        </div>
+      )}
 
       {participantList.length > 0 && (
         <Card className="w-full max-w-md shadow-lg mt-8">
           <CardHeader>
-            <CardTitle className="text-center text-xl font-bold flex items-center justify-center">
-              <Users className="mr-2 h-6 w-6" /> Participants ({participantList.length})
+            <CardTitle className="text-xl font-bold flex items-center justify-center">
+              <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
             </CardTitle>
           </CardHeader>
-          <CardContent className="max-h-48 overflow-y-auto text-sm">
-            <ul>
-              {participantList.map(p => (
-                <li key={p.uid} className={`p-1 ${currentUser?.uid === p.uid ? 'font-bold text-primary' : ''}`}>
-                  {p.nickname}
-                </li>
-              ))}
-            </ul>
+          <CardContent>
+            <ScrollArea className="h-40">
+              <ul className="space-y-1">
+                {participantList.map(p => (
+                  <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                    {p.nickname || 'Anonymous User'}
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
           </CardContent>
         </Card>
       )}
@@ -332,14 +348,15 @@ export default function SessionPage() {
                 Feedback Round: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>{sessionData.isRoundActive ? 'OPEN' : 'CLOSED'}</span>
               </div>
             <Button onClick={handleToggleRound} variant="outline" className="w-full" disabled={isProcessingAdminAction}>
-              {sessionData.isRoundActive ? <Pause className="mr-2" /> : <Play className="mr-2" />}
+              {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
               {sessionData.isRoundActive ? 'Close Feedback Round' : 'Open Feedback Round & Reset Votes'}
             </Button>
             <Button onClick={handleClearScores} variant="outline" className="w-full" disabled={isProcessingAdminAction}>
-              <RotateCcw className="mr-2" /> Clear Scores & Reset Votes
+              <RotateCcw className="mr-2 h-4 w-4" /> Clear Scores & Reset Votes
             </Button>
-            <div className="flex items-center justify-between space-x-2 pt-2">
-              <Label htmlFor="sounds-enabled" className="flex items-center">
+            
+            <div className="flex items-center justify-between space-x-2 pt-2 border-t mt-4 pt-4">
+              <Label htmlFor="sounds-enabled" className="flex items-center text-sm">
                 {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
                 Vote Sounds
               </Label>
@@ -351,9 +368,9 @@ export default function SessionPage() {
               />
             </div>
             <div className="flex items-center justify-between space-x-2">
-              <Label htmlFor="results-visible" className="flex items-center">
+              <Label htmlFor="results-visible" className="flex items-center text-sm">
                 {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
-                Live Results
+                Live Results Visible
               </Label>
               <Switch
                 id="results-visible"
@@ -363,7 +380,7 @@ export default function SessionPage() {
               />
             </div>
             <Button onClick={handleEndSession} variant="destructive" className="w-full !mt-6" disabled={isProcessingAdminAction}>
-              <Trash2 className="mr-2" /> End Session
+              <Trash2 className="mr-2 h-4 w-4" /> End Session
             </Button>
           </CardContent>
         </Card>
@@ -385,9 +402,10 @@ export default function SessionPage() {
 
        {!isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && !error && (
          <Button onClick={() => router.push('/')} variant="outline" className="mt-12">
-            <Home className="mr-2" /> Leave Session
+            <Home className="mr-2 h-4 w-4" /> Leave Session
         </Button>
        )}
     </main>
   );
 }
+

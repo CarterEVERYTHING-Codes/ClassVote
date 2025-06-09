@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
-  soundsEnabled: boolean; // New prop
+  soundsEnabled: boolean;
 }
 
 const GoodBadButtons = dynamic<GoodBadButtonsProps>(() => import('@/components/good-bad-buttons'), {
@@ -24,3 +24,5 @@ const GoodBadButtons = dynamic<GoodBadButtonsProps>(() => import('@/components/g
 });
 
 export default function GoodBadButtonsLoader(props: GoodBadButtonsProps) {
+  return <GoodBadButtons {...props} />;
+}
