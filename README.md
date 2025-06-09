@@ -47,7 +47,9 @@ ClassVote is a real-time, interactive web application where users can create or 
                                request.resource.data.sessionEnded == false &&
                                request.resource.data.soundsEnabled == true &&
                                request.resource.data.resultsVisible == true &&
-                               request.resource.data.participants == {};
+                               request.resource.data.participants is map && // Ensure participants is a map
+                               request.resource.data.participants.size() == 0; // Ensure participants is empty on creation
+
 
               allow update: if request.auth != null && resource.data.sessionEnded == false && (
                               // Admin actions
@@ -72,7 +74,7 @@ ClassVote is a real-time, interactive web application where users can create or 
                                 // Ensure admin doesn't change other critical fields during these specific actions, except participants map
                                 request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.createdAt == resource.data.createdAt &&
-                                (request.resource.data.participants == resource.data.participants || request.resource.data.participants.diff(resource.data.participants).affectedKeys().size() > 0) // Allow admin to modify participants
+                                (request.resource.data.participants == resource.data.participants || (request.resource.data.participants is map && resource.data.participants is map && request.resource.data.participants.diff(resource.data.participants).affectedKeys().size() > 0) || (!(resource.data.participants is map) && request.resource.data.participants is map)) // Allow admin to modify participants
                               ) ||
                               // User voting actions
                               (
@@ -84,7 +86,7 @@ ClassVote is a real-time, interactive web application where users can create or 
                                 // Ensure other critical fields are not changed by vote updates
                                 request.resource.data.adminUid == resource.data.adminUid && 
                                 request.resource.data.isRoundActive == resource.data.isRoundActive &&
-                                request.resource.data.sessionEnded == false &&
+                                request.resource.data.sessionEnded == resource.data.sessionEnded && // Check against existing sessionEnded
                                 request.resource.data.createdAt == resource.data.createdAt &&
                                 request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                 request.resource.data.resultsVisible == resource.data.resultsVisible &&
@@ -92,21 +94,26 @@ ClassVote is a real-time, interactive web application where users can create or 
                               ) ||
                               // User updating their own nickname in participants map
                               (
+                                // A: Incoming data for this participant is valid
                                 request.auth.uid in request.resource.data.participants &&
                                 request.resource.data.participants[request.auth.uid].nickname is string &&
                                 request.resource.data.participants[request.auth.uid].joinedAt != null &&
-                                // Ensure only their own participant entry is being added/modified
-                                resource.data.participants.keys().hasAny([request.auth.uid]) == false || // New participant
+
+                                // B: Logic for new vs. existing participant, robustly handling participants map
                                 (
-                                  resource.data.participants.keys().hasAll([request.auth.uid]) &&
-                                  request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid])
+                                  // New participant: either participants map doesn't exist in current doc, or user is not in it
+                                  ( !(resource.data.participants is map) || ( (resource.data.participants is map) && !(request.auth.uid in resource.data.participants) ) )
+                                  ||
+                                  // Existing participant: participants map exists in current doc, user is in it, and only their data is changing
+                                  ( (resource.data.participants is map) && (request.auth.uid in resource.data.participants) && request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid]) )
                                 ) &&
-                                // Ensure other critical fields are not changed
+
+                                // C: Ensure other critical fields are not changed by this user action
                                 request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.isRoundActive == resource.data.isRoundActive &&
                                 request.resource.data.likeClicks == resource.data.likeClicks &&
                                 request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                request.resource.data.sessionEnded == false &&
+                                request.resource.data.sessionEnded == resource.data.sessionEnded && // Ensures user doesn't change sessionEnded
                                 request.resource.data.createdAt == resource.data.createdAt &&
                                 request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                 request.resource.data.resultsVisible == resource.data.resultsVisible
@@ -134,4 +141,5 @@ ClassVote is a real-time, interactive web application where users can create or 
 *   Participants can set a session-specific nickname.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Anonymous user authentication via Firebase.
-```
+
+    
