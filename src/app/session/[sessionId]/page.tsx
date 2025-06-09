@@ -41,6 +41,7 @@ import { FirebaseError } from 'firebase/app';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDistanceToNow } from 'date-fns';
+import { ThemeToggleButton } from '@/components/theme-toggle-button';
 
 
 interface ParticipantData {
@@ -300,7 +301,7 @@ export default function SessionPage() {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
       toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      setShowEndSessionDialog(false);
+      setShowEndSessionDialog(false); // Close dialog on success
       router.push('/');
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -309,7 +310,7 @@ export default function SessionPage() {
       else if (error instanceof Error) errorMessage = `Could not end session: ${error.message}`;
       toast({ title: "Error Ending Session", description: errorMessage, variant: "destructive" });
     } finally {
-      setIsProcessingAdminAction(false);
+      setIsProcessingAdminAction(false); // Ensure this is always called
     }
   };
 
@@ -470,6 +471,9 @@ export default function SessionPage() {
   if (error && (!sessionData || sessionData.sessionEnded || error.includes("cannot be found") || error.includes("has ended"))) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
+        <div className="absolute top-4 right-4">
+            <ThemeToggleButton />
+        </div>
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
         <h1 className="text-2xl font-bold text-destructive mb-2">Session Status</h1>
         <p className="text-muted-foreground mb-6">{error}</p>
@@ -483,6 +487,9 @@ export default function SessionPage() {
   if (!sessionData) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
+        <div className="absolute top-4 right-4">
+            <ThemeToggleButton />
+        </div>
         <p className="text-lg text-muted-foreground">Session data is currently unavailable.</p>
         <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
             <Home className="mr-2 h-4 w-4" /> Go to Homepage
@@ -543,7 +550,10 @@ export default function SessionPage() {
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
       <TooltipProvider>
         {/* Header Section */}
-        <div className="text-center mb-6">
+        <div className="text-center mb-6 relative">
+            <div className="absolute top-0 right-0">
+                <ThemeToggleButton />
+            </div>
             <div className="flex items-center justify-center mb-1">
                 <h1 className="text-3xl sm:text-4xl md:text-5xl font-headline font-bold text-foreground">
                     Session: {sessionId}
@@ -583,7 +593,7 @@ export default function SessionPage() {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-            {/* Left Column (Participant Interactions) */}
+            {/* Left Column (Participant Interactions / Admin Forms) */}
             <section className="lg:col-span-6 space-y-6">
                 {!isCurrentUserAdmin && !sessionData.sessionEnded && (
                     <Card className="w-full shadow-md">
@@ -659,7 +669,7 @@ export default function SessionPage() {
                 )}
             </section>
 
-            {/* Right Column (Admin Controls & Participant List) */}
+            {/* Right Column (Admin Controls & Participant List / Non-Admin Participant List) */}
             <section className="lg:col-span-6 space-y-6">
                 {participantList.length > 0 && (
                     <Card className="w-full shadow-lg">
@@ -695,7 +705,7 @@ export default function SessionPage() {
                                 <AccordionItem value="presenters">
                                     <AccordionTrigger className="text-lg font-semibold">Presenter & Round Management</AccordionTrigger>
                                     <AccordionContent className="space-y-4 pt-3">
-                                        <div className="space-y-3 border p-3 rounded-md bg-muted/20">
+                                        <div className="space-y-3 border p-3 rounded-md bg-muted/20 dark:bg-muted/30">
                                             <h3 className="text-md font-semibold flex items-center">
                                                 <ListChecks className="mr-2 h-5 w-5 text-primary" />Presenter List
                                                 <Tooltip>
@@ -713,10 +723,10 @@ export default function SessionPage() {
                                             {participantList.length > 0 && (
                                                 <>
                                                     <h4 className="text-sm font-semibold mt-2 mb-1 text-muted-foreground">Add from participants:</h4>
-                                                    <ScrollArea className="h-28 border rounded-md p-2 bg-muted/30">
+                                                    <ScrollArea className="h-28 border rounded-md p-2 bg-muted/30 dark:bg-muted/50">
                                                         <ul className="space-y-1">
                                                             {participantList.map(p => (
-                                                                <li key={p.uid} className="flex justify-between items-center text-xs p-1 hover:bg-muted/50 rounded">
+                                                                <li key={p.uid} className="flex justify-between items-center text-xs p-1 hover:bg-muted/50 dark:hover:bg-muted/70 rounded">
                                                                     <span>{p.nickname || 'Anonymous User'}</span>
                                                                     <Button
                                                                         variant="ghost"
@@ -767,7 +777,7 @@ export default function SessionPage() {
                                             )}
                                         </div>
                                         
-                                        <div className="space-y-3 border p-3 rounded-md bg-muted/20">
+                                        <div className="space-y-3 border p-3 rounded-md bg-muted/20 dark:bg-muted/30">
                                             <h3 className="text-md font-semibold">General Round & Score Controls</h3>
                                              <div className="text-xs text-center font-medium">
                                                 Feedback Round Status: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>
@@ -816,7 +826,7 @@ export default function SessionPage() {
                                 <AccordionItem value="settings">
                                     <AccordionTrigger className="text-lg font-semibold">Session Settings & Features</AccordionTrigger>
                                     <AccordionContent className="space-y-3 pt-3">
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20">
+                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
                                             <Label htmlFor="sounds-enabled" className="flex items-center text-sm">
                                                 {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
                                                 Vote Sounds
@@ -834,7 +844,7 @@ export default function SessionPage() {
                                                 </Tooltip>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20">
+                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
                                             <Label htmlFor="results-visible" className="flex items-center text-sm">
                                                 {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
                                                 Live Results Visible
@@ -852,7 +862,7 @@ export default function SessionPage() {
                                                 </Tooltip>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20">
+                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
                                             <Label htmlFor="key-takeaways-enabled" className="flex items-center text-sm">
                                                 {sessionData.keyTakeawaysEnabled ? <Lightbulb className="mr-2 h-5 w-5 text-yellow-500" /> : <Lightbulb className="mr-2 h-5 w-5" />}
                                                 Key Takeaways
@@ -870,7 +880,7 @@ export default function SessionPage() {
                                                 </Tooltip>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20">
+                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
                                             <Label htmlFor="qna-enabled" className="flex items-center text-sm">
                                                 {sessionData.qnaEnabled ? <MessageSquarePlus className="mr-2 h-5 w-5 text-blue-500" /> : <MessageSquarePlus className="mr-2 h-5 w-5" />}
                                                 Q&A Submissions
@@ -892,7 +902,7 @@ export default function SessionPage() {
                                 </AccordionItem>
                             </Accordion>
                             
-                            <div className="mt-6 pt-6 border-t">
+                            <div className="mt-6 pt-6 border-t dark:border-gray-700">
                                 <div className="flex items-center">
                                     <Button onClick={triggerEndSessionDialog} variant="destructive" className="w-full" disabled={isProcessingAdminAction}>
                                         <Trash2 className="mr-2 h-4 w-4" /> End Session
@@ -920,7 +930,7 @@ export default function SessionPage() {
                                 <ScrollArea className="h-60">
                                     <ul className="space-y-3">
                                         {sessionData.keyTakeaways.sort((a,b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)).map((item, index) => (
-                                            <li key={index} className="p-3 border rounded-md bg-muted/30">
+                                            <li key={index} className="p-3 border rounded-md bg-muted/30 dark:bg-muted/50">
                                                 <p className="text-sm break-words">{item.takeaway}</p>
                                                 <p className="text-xs text-muted-foreground mt-1">
                                                     - {item.nickname} ({item.submittedAt ? formatDistanceToNow(item.submittedAt.toDate(), { addSuffix: true }) : 'just now'})
@@ -949,7 +959,7 @@ export default function SessionPage() {
                                 <ScrollArea className="h-60">
                                     <ul className="space-y-3">
                                         {sessionData.questions.sort((a,b) => (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)).map((item, index) => (
-                                            <li key={index} className="p-3 border rounded-md bg-muted/30">
+                                            <li key={index} className="p-3 border rounded-md bg-muted/30 dark:bg-muted/50">
                                                 <p className="text-sm break-words">{item.questionText}</p>
                                                 <p className="text-xs text-muted-foreground mt-1">
                                                     - {item.nickname} ({item.submittedAt ? formatDistanceToNow(item.submittedAt.toDate(), { addSuffix: true }) : 'just now'})
