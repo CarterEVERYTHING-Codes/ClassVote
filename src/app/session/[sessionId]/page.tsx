@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, arrayUnion, FieldValue, increment, getDoc, FirestoreError } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -33,12 +33,11 @@ import {
   } from "@/components/ui/accordion";
 import {
     Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, Send, Info, UserPlusIcon
+    ListChecks, ChevronsRight, Send, Info, UserPlusIcon, LogIn
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatDistanceToNow } from 'date-fns';
 import { ThemeToggleButton } from '@/components/theme-toggle-button';
 import { cn } from "@/lib/utils";
 
@@ -77,8 +76,11 @@ export default function SessionPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
+  
   const [nicknameInput, setNicknameInput] = useState('');
   const [isSavingNickname, setIsSavingNickname] = useState(false);
+  const [hasSubmittedNickname, setHasSubmittedNickname] = useState(false);
+
   const [presenterQueueInput, setPresenterQueueInput] = useState('');
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
 
@@ -88,6 +90,7 @@ export default function SessionPage() {
       setCurrentUser(user);
       if (!user) {
          setNicknameInput('');
+         setHasSubmittedNickname(false);
       }
     });
     return () => unsubscribeAuth();
@@ -114,27 +117,35 @@ export default function SessionPage() {
 
         if (data.sessionEnded) {
           setError("This session has ended.");
+          if (!currentUser || !data.participants?.[currentUser.uid]) {
+            setHasSubmittedNickname(false); // Prevent nickname submission if session ended and no nickname set
+          }
         } else {
           setError(null);
         }
+
+        // Check if current user already has a nickname in this session
+        if (currentUser && data.participants?.[currentUser.uid]?.nickname) {
+          setNicknameInput(data.participants[currentUser.uid].nickname);
+          setHasSubmittedNickname(true);
+        } else if (currentUser) {
+          setHasSubmittedNickname(false); // Prompt for nickname if not yet set
+        }
+
       } else {
         setSessionData(null);
         setError("This session cannot be found. It may have been ended or never existed.");
+        setHasSubmittedNickname(false);
       }
     }, (err) => {
       console.error("Error fetching session data: ", err);
       setError("Error loading session. Please try again.");
       toast({ title: "Error", description: "Could not load session data.", variant: "destructive" });
       setIsLoading(false);
+      setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast]);
-
-  useEffect(() => {
-    if (currentUser && sessionData?.participants?.[currentUser.uid]?.nickname && nicknameInput === '') {
-      setNicknameInput(sessionData.participants[currentUser.uid].nickname);
-    }
-  }, [currentUser, sessionData, nicknameInput]);
+  }, [sessionId, router, toast, currentUser]);
 
 
   useEffect(() => {
@@ -146,22 +157,49 @@ export default function SessionPage() {
   }, [currentUser, sessionData]);
 
   const handleSetNickname = async () => {
-    if (!currentUser || !nicknameInput.trim() || !sessionData || sessionData.sessionEnded) {
-      toast({ title: "Cannot set nickname", description: "Invalid input or session state.", variant: "destructive"});
+    if (!currentUser || !nicknameInput.trim() || sessionData?.sessionEnded) {
+      toast({ title: "Cannot set nickname", description: "Nickname is required or session has ended.", variant: "destructive"});
       return;
     }
+    if (hasSubmittedNickname) { // Nickname already set and is immutable
+        toast({ title: "Nickname Set", description: "Your nickname for this session is already set.", variant: "default"});
+        return;
+    }
+
     setIsSavingNickname(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
-      const currentParticipantData = sessionData.participants?.[currentUser.uid];
+      // Fetch fresh session data for uniqueness check
+      const currentSessionSnap = await getDoc(sessionDocRef);
+      if (!currentSessionSnap.exists()) {
+        toast({ title: "Error", description: "Session not found.", variant: "destructive" });
+        setIsSavingNickname(false);
+        return;
+      }
+      const currentSessionData = currentSessionSnap.data() as SessionData;
+      if (currentSessionData.sessionEnded) {
+        toast({ title: "Session Ended", description: "Cannot set nickname, the session has ended.", variant: "default"});
+        setIsSavingNickname(false);
+        return;
+      }
+
+      const trimmedNickname = nicknameInput.trim();
+      const existingNicknames = Object.values(currentSessionData.participants || {}).map(p => p.nickname.toLowerCase());
+      if (existingNicknames.includes(trimmedNickname.toLowerCase())) {
+        toast({ title: "Nickname Taken", description: "This nickname is already in use in this session. Please choose another.", variant: "destructive" });
+        setIsSavingNickname(false);
+        return;
+      }
+
       const newParticipantData: ParticipantData = {
-        nickname: nicknameInput.trim(),
-        joinedAt: currentParticipantData?.joinedAt || serverTimestamp()
+        nickname: trimmedNickname,
+        joinedAt: serverTimestamp() // Always set on first submission
       };
       await updateDoc(sessionDocRef, {
         [`participants.${currentUser.uid}`]: newParticipantData
       });
-      toast({ title: "Nickname Updated!", description: `You are now "${nicknameInput.trim()}".` });
+      toast({ title: "Nickname Set!", description: `You have joined the session as "${trimmedNickname}".` });
+      setHasSubmittedNickname(true); // Lock input and show main content
     } catch (error) {
       console.error("Error setting nickname: ", error);
       let errorMessageText = "Could not save nickname.";
@@ -173,7 +211,12 @@ export default function SessionPage() {
   };
 
   const handleAdminAction = async (action: () => Promise<void>, successMessage: string, errorMessage: string) => {
-    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || isProcessingAdminAction) return;
+    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || isProcessingAdminAction || !hasSubmittedNickname) {
+        if (!hasSubmittedNickname && isCurrentUserAdmin) {
+            toast({title: "Set Nickname First", description: "Please set your admin nickname to manage the session.", variant: "default"});
+        }
+        return;
+    }
     setIsProcessingAdminAction(true);
     try {
       await action();
@@ -201,11 +244,8 @@ export default function SessionPage() {
             updateData.dislikeClicks = 0;
              if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
         }
-
-
         await updateDoc(sessionDocRef, updateData);
         if (!sessionData!.isRoundActive && typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
-
       },
       `Feedback round is now ${!sessionData!.isRoundActive ? 'OPEN' : 'CLOSED'}.`,
       "Could not update feedback round status."
@@ -243,7 +283,7 @@ export default function SessionPage() {
     );
 
   const triggerEndSessionDialog = () => {
-    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
+    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || !hasSubmittedNickname) {
       return;
     }
     setShowEndSessionDialog(true);
@@ -252,7 +292,7 @@ export default function SessionPage() {
  const executeEndSession = async () => {
     setIsProcessingAdminAction(true);
     try {
-      if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) {
+      if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || !hasSubmittedNickname) {
         setShowEndSessionDialog(false);
         setIsProcessingAdminAction(false);
         return;
@@ -365,7 +405,7 @@ export default function SessionPage() {
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
-  if (isLoading) {
+  if (isLoading && !sessionData) { // Show skeleton only during initial load without any session data yet
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <Skeleton className="h-10 w-64 mb-4" />
@@ -395,26 +435,64 @@ export default function SessionPage() {
       </main>
     );
   }
-
-  if (!sessionData) {
+  
+  // If user is authenticated but hasn't submitted a nickname, show nickname form
+  if (currentUser && !hasSubmittedNickname && sessionData && !sessionData.sessionEnded) {
     return (
+        <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-background">
+            <div className="absolute top-4 right-4">
+                <ThemeToggleButton />
+            </div>
+            <Card className="w-full max-w-md shadow-xl">
+                <CardHeader>
+                    <CardTitle className="text-2xl text-center">Enter Your Nickname</CardTitle>
+                    <CardDescription className="text-center">
+                        Choose a nickname to join session <span className="font-bold">{sessionId}</span>. This cannot be changed later.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <Input
+                        type="text"
+                        value={nicknameInput}
+                        onChange={(e) => setNicknameInput(e.target.value)}
+                        placeholder="Your nickname (e.g., AlphaLearner)"
+                        maxLength={25}
+                        disabled={isSavingNickname || hasSubmittedNickname}
+                        className="text-lg h-12 text-center"
+                    />
+                    <Button 
+                        onClick={handleSetNickname} 
+                        disabled={isSavingNickname || !nicknameInput.trim()}
+                        className="w-full text-lg py-6"
+                    >
+                        {isSavingNickname ? 'Joining...' : <> <LogIn className="mr-2 h-5 w-5"/> Join Session </>}
+                    </Button>
+                </CardContent>
+            </Card>
+             <Button onClick={() => router.push('/')} variant="link" className="mt-6 text-muted-foreground">
+                <Home className="mr-2 h-4 w-4" /> Or go back to Homepage
+            </Button>
+        </main>
+    );
+  }
+  
+  // If loading session data for an already-nicknamed user, or if auth is pending
+  if (isLoading || !currentUser || !sessionData) {
+     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <div className="absolute top-4 right-4">
-            <ThemeToggleButton />
-        </div>
-        <p className="text-lg text-muted-foreground">Session data is currently unavailable.</p>
-        <Button onClick={() => router.push('/')} variant="outline" className="mt-6">
-            <Home className="mr-2 h-4 w-4" /> Go to Homepage
-        </Button>
+         <div className="absolute top-4 right-4"> <ThemeToggleButton /> </div>
+        <p className="text-lg text-muted-foreground animate-pulse">Loading session...</p>
       </main>
     );
   }
+
 
   const participantList = Object.entries(sessionData.participants || {})
     .map(([uid, data]) => ({ uid, nickname: data.nickname, joinedAt: data.joinedAt }))
     .sort((a, b) => {
         const timeAValue = a.joinedAt;
         const timeBValue = b.joinedAt;
+        // Handle both Firestore Timestamp and serverTimestamp FieldValue during optimistic updates
         const timeA = timeAValue instanceof Timestamp ? timeAValue.toMillis() : (typeof (timeAValue as any)?.seconds === 'number' ? (timeAValue as any).seconds * 1000 : Date.now());
         const timeB = timeBValue instanceof Timestamp ? timeBValue.toMillis() : (typeof (timeBValue as any)?.seconds === 'number' ? (timeBValue as any).seconds * 1000 : Date.now());
         return timeA - timeB;
@@ -442,7 +520,7 @@ export default function SessionPage() {
       sessionStatusMessage = isCurrentUserAdmin ?
           (sessionData.isRoundActive ? "General feedback round is OPEN. You can also start the presentations." : "Admin can start the presentations or open a general feedback round.") :
           (sessionData.isRoundActive ? "General feedback round is OPEN." : "Waiting for admin to start presentations or open a general round.");
-  } else {
+  } else { // General session (no presenter queue or queue not started)
       presenterDisplayMessage = isCurrentUserAdmin ? "No presenter list. Run a general feedback round or add presenters." : "General feedback session.";
       sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is CLOSED.";
   }
@@ -474,6 +552,13 @@ export default function SessionPage() {
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
       <TooltipProvider>
         <div className="text-center mb-6 relative">
+            <div className="absolute top-0 left-0">
+                 {selfNickname && (
+                    <span className="text-sm text-muted-foreground bg-muted/50 px-2 py-1 rounded-md">
+                        Joined as: <span className="font-semibold text-primary">{selfNickname}</span>
+                    </span>
+                 )}
+            </div>
             <div className="absolute top-0 right-0">
                 <ThemeToggleButton />
             </div>
@@ -525,30 +610,8 @@ export default function SessionPage() {
 
             <section className={cn(
                 "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7"
+                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" // Main content takes more space
             )}>
-                 {!isCurrentUserAdmin && (
-                    <Card className="w-full shadow-md">
-                        <CardHeader>
-                            <CardTitle className="text-xl">Set Your Nickname</CardTitle>
-                            <CardDescription>This will be shown to others in the session.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex items-center space-x-2">
-                            <Input
-                            type="text"
-                            value={nicknameInput}
-                            onChange={(e) => setNicknameInput(e.target.value)}
-                            placeholder="Enter your nickname"
-                            maxLength={25}
-                            disabled={isSavingNickname || sessionData.sessionEnded}
-                            />
-                            <Button onClick={handleSetNickname} disabled={isSavingNickname || !nicknameInput.trim() || sessionData.sessionEnded}>
-                            {isSavingNickname ? 'Saving...' : 'Set'}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
-
                 <Leaderboard
                     sessionId={sessionId}
                     resultsVisible={sessionData.resultsVisible}
@@ -560,7 +623,7 @@ export default function SessionPage() {
 
             <section className={cn(
                 "space-y-4",
-                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5"
+                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5" // Sidebar content takes less space
             )}>
                  {(participantList.length > 0 ) && (
                     <Card className="w-full shadow-lg">
