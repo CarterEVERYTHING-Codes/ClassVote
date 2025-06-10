@@ -36,7 +36,7 @@ ClassVote is a real-time, interactive web application where users create or join
     *   **Firestore:** In the Firebase console, navigate to Firestore Database (under Build) and create a database. Start in "production mode" and choose a region.
     *   **Register a Web App:** Go to Project Overview > Project settings (gear icon) > General tab. Scroll down to "Your apps" and click on the Web icon (</>) to add a web app. Follow the prompts.
     *   **Copy Configuration:** After registering the web app, Firebase will display a `firebaseConfig` object. Copy these values.
-    *   **Update `src/lib/firebase.ts`:** Open the `src/lib/firebase.ts` file in your project and replace the placeholder values in the `firebaseConfig` object with the ones you copied from your Firebase project (though the current ones in the file might be your actual project's if you've set it up).
+    *   **Update `src/lib/firebase.ts`:** Open the `src/lib/firebase.ts` file in your project and replace the placeholder values in the `firebaseConfig` object with the ones you copied from your Firebase project. **Ensure these are exactly correct.**
     *   **Firestore Security Rules:** Update your Firestore security rules. Navigate to Firestore Database > Rules tab in the Firebase console and replace the default rules with the following:
         ```firestore-rules
         rules_version = '2';
@@ -263,6 +263,18 @@ ClassVote is a real-time, interactive web application where users create or join
           }
         }
         ```
+    *   **IMPORTANT: API Key Restrictions (Google Cloud Console):** If `auth/unauthorized-domain` persists after adding `localhost` to Firebase Auth domains:
+        *   Go to [Google Cloud Console](https://console.cloud.google.com/).
+        *   Select your project.
+        *   Navigate to **APIs & Services > Credentials**.
+        *   Find the API key used by your web app (usually "Browser key" or matching your `firebaseConfig.apiKey`). Click its name.
+        *   Under **Application restrictions**, choose "HTTP referrers (web sites)".
+        *   Under **Website restrictions**, click "ADD" and add these entries if they are missing:
+            *   `localhost`
+            *   `localhost:*` (wildcard for any port)
+            *   `http://localhost:YOUR_PORT_NUMBER` (e.g., `http://localhost:9002`)
+        *   Under **API restrictions**, if "Restrict key" is chosen, ensure **"Identity Toolkit API"** is in the list of allowed APIs. "Don't restrict key" is often simpler for development.
+        *   **Click SAVE at the bottom of the GCP page.** Changes can take a few minutes to propagate.
 
 4.  **Run the Development Server:**
     ```bash
