@@ -280,11 +280,13 @@ ClassVote is a real-time, interactive web application where users create or join
         *   **Click SAVE at the bottom of the GCP page.** Changes can take a few minutes to propagate.
 
     *   **Troubleshooting "The requested action is invalid" error (on `...firebaseapp.com/__/auth/handler` page):**
-        This usually means an issue with your `firebaseConfig` values or Google Sign-In provider setup:
-        1.  **Re-verify `apiKey` in `src/lib/firebase.ts`:** This is the MOST critical. Go to Firebase Console > Project settings (gear icon) > General > Your apps > Web App. Compare the `apiKey` there with your file. They MUST be identical.
-        2.  **Re-verify `authDomain` in `src/lib/firebase.ts`:** Should be `YOUR_PROJECT_ID.firebaseapp.com`.
-        3.  **Check Google Sign-In Provider in Firebase Console:** Go to Authentication > Sign-in method > Google. Ensure it's "Enabled" and a "Project support email" is selected. You can try disabling/re-enabling it.
-        4.  **Check OAuth Consent Screen in GCP:** Go to GCP Console > APIs & Services > OAuth consent screen.
+        This usually means an issue with your `firebaseConfig` values in `src/lib/firebase.ts` or your Google Sign-In provider setup in Firebase.
+        1.  **Re-verify `apiKey` and `authDomain` in `src/lib/firebase.ts`:** This is the MOST critical. Go to Firebase Console > Project settings (gear icon) > General > Your apps > Web App. Compare the `apiKey` and `authDomain` there with what's in your file. They MUST be IDENTICAL. The `authDomain` should be `YOUR_PROJECT_ID.firebaseapp.com`.
+        2.  **Check Google Sign-In Provider in Firebase Console:** Go to Authentication > Sign-in method > Google.
+            *   Ensure it's "Enabled".
+            *   Ensure a "Project support email" is selected.
+            *   Try disabling it, saving, then re-enabling it and re-selecting the support email. This can sometimes refresh the configuration.
+        3.  **Check OAuth Consent Screen in GCP:** Go to GCP Console > APIs & Services > OAuth consent screen.
             *   If "Publishing status" is "Testing", add your Google account email to the "Test users" list.
             *   Ensure "App name", "User support email", and "Developer contact information" are filled.
 

@@ -12,14 +12,16 @@ import {
 import { getAnalytics } from "firebase/analytics";
 
 // Your web app's Firebase configuration
+// PLEASE DOUBLE-CHECK these values against your Firebase project settings:
+// Firebase Console > Project settings (gear icon) > General tab > Your apps > Web app
 const firebaseConfig = {
-  apiKey: "AIzaSyAI3WF7TY3yOoEaTEzysHx8Lrutu6Tlj3Q",
-  authDomain: "votesessionclassroom.firebaseapp.com",
-  projectId: "votesessionclassroom",
-  storageBucket: "votesessionclassroom.firebasestorage.app",
-  messagingSenderId: "315788377527",
-  appId: "1:315788377527:web:e02bbcdf9e683943ec3c32",
-  measurementId: "G-SJ8SRNPQMT"
+  apiKey: "AIzaSyAI3WF7TY3yOoEaTEzysHx8Lrutu6Tlj3Q", // You confirmed this key
+  authDomain: "votesessionclassroom.firebaseapp.com", // Based on your project ID
+  projectId: "votesessionclassroom", // Based on your project ID
+  storageBucket: "votesessionclassroom.firebasestorage.app", // From your existing file
+  messagingSenderId: "315788377527", // From your existing file
+  appId: "1:315788377527:web:e02bbcdf9e683943ec3c32", // From your existing file
+  measurementId: "G-SJ8SRNPQMT" // From your existing file
 };
 
 // Initialize Firebase
@@ -45,8 +47,6 @@ let auth;
 try {
   db = getFirestore(app);
   auth = getAuth(app);
-  // Automatic anonymous sign-in is removed from here. 
-  // Sign-in will be handled more explicitly by the UI/AuthContext.
 } catch (error) {
   console.error("CRITICAL FIREBASE INITIALIZATION ERROR (during getFirestore/getAuth): ", (error instanceof Error ? error.message : String(error)));
 }
