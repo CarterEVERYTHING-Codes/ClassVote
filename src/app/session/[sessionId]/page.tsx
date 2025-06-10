@@ -8,7 +8,7 @@ import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 import Leaderboard from '@/components/leaderboard';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button'; // Added buttonVariants here
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
