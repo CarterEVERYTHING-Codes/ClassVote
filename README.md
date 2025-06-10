@@ -29,16 +29,16 @@ ClassVote is a real-time, interactive web application where users create or join
     *   **Authentication:** In the Firebase console, navigate to Authentication (under Build).
         *   Go to the **Sign-in method** tab:
             *   Enable the "Anonymous" sign-in provider.
-            *   Enable the "Google" sign-in provider. Ensure you add your app's SHA-1 certificate fingerprint if prompted (for Android, not strictly necessary for web-only but good practice if you might expand).
+            *   Enable the "Google" sign-in provider. Ensure you select your project support email.
         *   Go to the **Settings** tab (within Authentication):
             *   Scroll to **Authorized domains**.
             *   Click **Add domain** and add `localhost` if it's not already present. This is crucial for local development.
-            *   **If using Google Cloud Workstations or other port-forwarding services:** You might get errors like `auth/requests-from-referer-...-are-blocked`. You need to add the specific domain shown in the error message to this "Authorized domains" list. For example, if the error shows `https://1234-my-workstation.cluster-xyz.cloudworkstations.dev`, you would add `1234-my-workstation.cluster-xyz.cloudworkstations.dev` here.
+            *   **If using Google Cloud Workstations or other port-forwarding services:** You might get errors like `auth/requests-from-referer-...-are-blocked`. You need to add the specific domain shown in the error message to this "Authorized domains" list. For example, if the error shows `https://1234-my-workstation.cluster-xyz.cloudworkstations.dev`, you would add `1234-my-workstation.cluster-xyz.cloudworkstations.dev` here. Also add the non-port-prefixed version if applicable, e.g., `my-workstation.cluster-xyz.cloudworkstations.dev`.
             *   Your deployed app's domain will also need to be listed here (Firebase usually adds this automatically when you set up Hosting).
     *   **Firestore:** In the Firebase console, navigate to Firestore Database (under Build) and create a database. Start in "production mode" and choose a region.
     *   **Register a Web App:** Go to Project Overview > Project settings (gear icon) > General tab. Scroll down to "Your apps" and click on the Web icon (</>) to add a web app. Follow the prompts.
     *   **Copy Configuration:** After registering the web app, Firebase will display a `firebaseConfig` object. Copy these values.
-    *   **Update `src/lib/firebase.ts`:** Open the `src/lib/firebase.ts` file in your project and replace the placeholder values in the `firebaseConfig` object with the ones you copied from your Firebase project. **Ensure these are exactly correct.**
+    *   **Update `src/lib/firebase.ts`:** Open the `src/lib/firebase.ts` file in your project and replace the placeholder values in the `firebaseConfig` object with the ones you copied from your Firebase project. **Ensure these are exactly correct, especially `apiKey` and `authDomain`.**
     *   **Firestore Security Rules:** Update your Firestore security rules. Navigate to Firestore Database > Rules tab in the Firebase console and replace the default rules with the following:
         ```firestore-rules
         rules_version = '2';
@@ -276,8 +276,18 @@ ClassVote is a real-time, interactive web application where users create or join
             *   `localhost:*` (wildcard for any port)
             *   `http://localhost:YOUR_PORT_NUMBER` (e.g., `http://localhost:9002`)
             *   **If using Google Cloud Workstations or similar port-forwarding:** Add the specific `https://<your-workstation-subdomain>.cloudworkstations.dev/*` pattern that appears in the error message (e.g., `https://6000-my-workstation.cluster-xyz.cloudworkstations.dev/*`).
-        *   Under **API restrictions**, if "Restrict key" is chosen, ensure **"Identity Toolkit API"** is in the list of allowed APIs. "Don't restrict key" is often simpler for development.
+        *   Under **API restrictions**, if "Restrict key" is chosen, ensure **"Identity Toolkit API"** is in the list of allowed APIs. "Don't restrict key" is often simpler for development (but less secure for production).
         *   **Click SAVE at the bottom of the GCP page.** Changes can take a few minutes to propagate.
+
+    *   **Troubleshooting "The requested action is invalid" error (on `...firebaseapp.com/__/auth/handler` page):**
+        This usually means an issue with your `firebaseConfig` values or Google Sign-In provider setup:
+        1.  **Re-verify `apiKey` in `src/lib/firebase.ts`:** This is the MOST critical. Go to Firebase Console > Project settings (gear icon) > General > Your apps > Web App. Compare the `apiKey` there with your file. They MUST be identical.
+        2.  **Re-verify `authDomain` in `src/lib/firebase.ts`:** Should be `YOUR_PROJECT_ID.firebaseapp.com`.
+        3.  **Check Google Sign-In Provider in Firebase Console:** Go to Authentication > Sign-in method > Google. Ensure it's "Enabled" and a "Project support email" is selected. You can try disabling/re-enabling it.
+        4.  **Check OAuth Consent Screen in GCP:** Go to GCP Console > APIs & Services > OAuth consent screen.
+            *   If "Publishing status" is "Testing", add your Google account email to the "Test users" list.
+            *   Ensure "App name", "User support email", and "Developer contact information" are filled.
+
 
 4.  **Run the Development Server:**
     ```bash
