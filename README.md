@@ -26,9 +26,13 @@ ClassVote is a real-time, interactive web application where users create or join
 
 3.  **Set up Firebase:**
     *   Create a new project in the [Firebase Console](https://console.firebase.google.com/).
-    *   **Authentication:** In the Firebase console, navigate to Authentication (under Build) > Sign-in method:
-        *   Enable the "Anonymous" sign-in provider.
-        *   Enable the "Google" sign-in provider. Ensure you add your app's SHA-1 certificate fingerprint if prompted (for Android, not strictly necessary for web-only but good practice if you might expand). For web, ensure your app's authorized domains are correctly listed (Firebase usually handles `localhost` and your hosting domain automatically).
+    *   **Authentication:** In the Firebase console, navigate to Authentication (under Build).
+        *   Go to the **Sign-in method** tab:
+            *   Enable the "Anonymous" sign-in provider.
+            *   Enable the "Google" sign-in provider. Ensure you add your app's SHA-1 certificate fingerprint if prompted (for Android, not strictly necessary for web-only but good practice if you might expand).
+        *   Go to the **Settings** tab (within Authentication):
+            *   Scroll to **Authorized domains**.
+            *   Click **Add domain** and add `localhost` if it's not already present. This is crucial for local development to work. Your deployed app's domain will also need to be listed here (Firebase usually adds this automatically when you set up Hosting).
     *   **Firestore:** In the Firebase console, navigate to Firestore Database (under Build) and create a database. Start in "production mode" and choose a region.
     *   **Register a Web App:** Go to Project Overview > Project settings (gear icon) > General tab. Scroll down to "Your apps" and click on the Web icon (</>) to add a web app. Follow the prompts.
     *   **Copy Configuration:** After registering the web app, Firebase will display a `firebaseConfig` object. Copy these values.
@@ -175,8 +179,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                   // Admin kicking a participant
                                   (
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
-                                    (request.auth.uid in resource.data.participants ? request.auth.uid in request.resource.data.participants : true) &&
-                                    request.resource.data.participants.keys().size() < resource.data.participants.keys().size() &&
+                                    (request.auth.uid in resource.data.participants ? request.auth.uid in request.resource.data.participants : true) && // Admin cannot kick self if present
+                                    request.resource.data.participants.keys().size() < resource.data.participants.keys().size() && // Ensure a participant is removed
                                     request.resource.data.isRoundActive == resource.data.isRoundActive &&
                                     request.resource.data.likeClicks == resource.data.likeClicks &&
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
@@ -228,15 +232,15 @@ ClassVote is a real-time, interactive web application where users create or join
                                 request.resource.data.participants[request.auth.uid].nickname is string &&
                                 request.resource.data.participants[request.auth.uid].uid == request.auth.uid &&
                                 (
-                                  (!(resource.data.participants is map) || (resource.data.participants is map && !(request.auth.uid in resource.data.participants))) &&
-                                  request.resource.data.participants[request.auth.uid].joinedAt == request.time
+                                  (!(resource.data.participants is map) || (resource.data.participants is map && !(request.auth.uid in resource.data.participants))) && // User not in participants map yet
+                                  request.resource.data.participants[request.auth.uid].joinedAt == request.time // joinedAt is set on creation
                                 ) ||
                                 (
-                                  (resource.data.participants is map && request.auth.uid in resource.data.participants) &&
-                                  request.resource.data.participants[request.auth.uid].nickname == resource.data.participants[request.auth.uid].nickname && 
-                                  request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt
+                                  (resource.data.participants is map && request.auth.uid in resource.data.participants) && // User already in participants map
+                                  request.resource.data.participants[request.auth.uid].nickname == resource.data.participants[request.auth.uid].nickname && // Nickname is immutable
+                                  request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt // joinedAt is immutable
                                 ) &&
-                                (
+                                ( // Ensure only the user's own entry is being added/affected
                                   (!(resource.data.participants is map) && request.resource.data.participants.keys().hasOnly([request.auth.uid])) ||
                                   (resource.data.participants is map && request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid]))
                                 ) &&
@@ -293,3 +297,5 @@ ClassVote is a real-time, interactive web application where users create or join
 *   Save presenter scores to their permanent user profiles (for logged-in Google users).
 *   Admin dashboard to view history of sessions they've hosted.
 *   More detailed user profiles.
+
+```
