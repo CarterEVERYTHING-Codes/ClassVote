@@ -3,12 +3,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
-import { User, onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion } from 'firebase/firestore';
+import { db } from '@/lib/firebase'; // auth is now managed by AuthContext
+import { useAuth } from '@/contexts/auth-context'; // Import useAuth
+import { User as FirebaseUserType } from 'firebase/auth'; // Alias Firebase User type
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 import Leaderboard from '@/components/leaderboard';
-import { Button, buttonVariants } from '@/components/ui/button'; // Added buttonVariants here
+import OverallLeaderboard from '@/components/overall-leaderboard'; // Import OverallLeaderboard
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -33,18 +35,26 @@ import {
   } from "@/components/ui/accordion";
 import {
     Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, Send, Info, UserPlusIcon, LogIn, UserX
+    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ThemeToggleButton } from '@/components/theme-toggle-button';
+// ThemeToggleButton is now in global Header
 import { cn } from "@/lib/utils";
 
 
 interface ParticipantData {
   nickname: string;
   joinedAt: Timestamp | FieldValue;
+  uid: string; // Ensure UID is part of participant data for clarity
+}
+
+interface PresenterScore {
+  name: string;
+  likes: number;
+  dislikes: number;
+  netScore: number;
 }
 
 interface SessionData {
@@ -61,6 +71,7 @@ interface SessionData {
   currentPresenterIndex?: number;
   currentPresenterName?: string;
   sessionType?: string;
+  presenterScores?: PresenterScore[];
 }
 
 interface ParticipantToKick {
@@ -73,12 +84,13 @@ export default function SessionPage() {
   const router = useRouter();
   const sessionId = params.sessionId as string;
   const { toast } = useToast();
+  const { user: authUser, loading: authLoading, ensureAnonymousSignIn } = useAuth(); // Use auth context
 
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSession, setIsLoadingSession] = useState(true); // Renamed for clarity
   const [error, setError] = useState<string | null>(null);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // currentUser from auth context is now authUser
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
   
@@ -93,27 +105,22 @@ export default function SessionPage() {
 
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      if (!user) {
-         setNicknameInput('');
-         setHasSubmittedNickname(false);
-      }
-    });
-    return () => unsubscribeAuth();
-  }, []);
-
-  useEffect(() => {
     if (!sessionId) {
-      setIsLoading(false);
+      setIsLoadingSession(false);
       setError("No session ID provided.");
       router.push('/');
       return;
     }
-    setIsLoading(true);
+
+    if (authLoading) { // Wait for auth to resolve
+        setIsLoadingSession(true);
+        return;
+    }
+    
+    setIsLoadingSession(true);
     const sessionDocRef = doc(db, 'sessions', sessionId);
     const unsubscribeFirestore = onSnapshot(sessionDocRef, (docSnap) => {
-      setIsLoading(false);
+      setIsLoadingSession(false);
       if (docSnap.exists()) {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
@@ -124,28 +131,25 @@ export default function SessionPage() {
 
         if (data.sessionEnded) {
           setError("This session has ended.");
-          // If current user was kicked and then session ended, they should see the session ended message
-          // and not be prompted for a nickname again.
-          if (currentUser && !data.participants?.[currentUser.uid] && hasSubmittedNickname) {
-             // User was likely kicked, keep hasSubmittedNickname true to avoid re-prompting
-          } else if (!currentUser || !data.participants?.[currentUser.uid]) {
+          if (authUser && !data.participants?.[authUser.uid] && hasSubmittedNickname) {
+            // User was likely kicked
+          } else if (!authUser || !data.participants?.[authUser.uid]) {
             setHasSubmittedNickname(false); 
           }
         } else {
           setError(null);
         }
         
-        if (currentUser && !data.participants?.[currentUser.uid] && hasSubmittedNickname && !data.sessionEnded) {
+        if (authUser && !data.participants?.[authUser.uid] && hasSubmittedNickname && !data.sessionEnded) {
             toast({ title: "Removed from session", description: "You have been removed from this session by the admin.", variant: "destructive" });
-            router.push('/'); // Redirect if kicked
+            router.push('/'); 
             return;
         }
 
-
-        if (currentUser && data.participants?.[currentUser.uid]?.nickname) {
-          setNicknameInput(data.participants[currentUser.uid].nickname);
+        if (authUser && data.participants?.[authUser.uid]?.nickname) {
+          setNicknameInput(data.participants[authUser.uid].nickname);
           setHasSubmittedNickname(true);
-        } else if (currentUser && !data.sessionEnded) { // only prompt if session not ended
+        } else if (authUser && !data.sessionEnded) {
           setHasSubmittedNickname(false); 
         }
 
@@ -158,30 +162,40 @@ export default function SessionPage() {
       console.error("Error fetching session data: ", err);
       setError("Error loading session. Please try again.");
       toast({ title: "Error", description: "Could not load session data.", variant: "destructive" });
-      setIsLoading(false);
+      setIsLoadingSession(false);
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, currentUser, hasSubmittedNickname]);
+  }, [sessionId, router, toast, authUser, authLoading, hasSubmittedNickname, presenterQueueInput]);
 
 
   useEffect(() => {
-    if (currentUser && sessionData) {
-      setIsCurrentUserAdmin(currentUser.uid === sessionData.adminUid);
+    if (authUser && sessionData) {
+      setIsCurrentUserAdmin(authUser.uid === sessionData.adminUid);
     } else {
       setIsCurrentUserAdmin(false);
     }
-  }, [currentUser, sessionData]);
+  }, [authUser, sessionData]);
 
   const handleSetNickname = async () => {
+    let currentUser = authUser;
+    if (!currentUser) {
+        currentUser = await ensureAnonymousSignIn(); // Ensure at least anonymous
+    }
+
     if (!currentUser || !nicknameInput.trim() || sessionData?.sessionEnded) {
       toast({ title: "Cannot set nickname", description: "Nickname is required or session has ended.", variant: "destructive"});
       return;
     }
-    if (hasSubmittedNickname) { 
+    if (hasSubmittedNickname && sessionData?.participants?.[currentUser.uid]?.nickname === nicknameInput.trim()) { 
         toast({ title: "Nickname Set", description: "Your nickname for this session is already set.", variant: "default"});
         return;
     }
+     if (hasSubmittedNickname) {
+      toast({ title: "Nickname Immutable", description: "Your nickname cannot be changed for this session.", variant: "destructive" });
+      return;
+    }
+
 
     setIsSavingNickname(true);
     try {
@@ -209,7 +223,8 @@ export default function SessionPage() {
 
       const newParticipantData: ParticipantData = {
         nickname: trimmedNickname,
-        joinedAt: serverTimestamp() 
+        joinedAt: serverTimestamp(),
+        uid: currentUser.uid // Store UID
       };
       await updateDoc(sessionDocRef, {
         [`participants.${currentUser.uid}`]: newParticipantData
@@ -227,7 +242,7 @@ export default function SessionPage() {
   };
 
   const handleAdminAction = async (action: () => Promise<void>, successMessage: string, errorMessage: string) => {
-    if (!isCurrentUserAdmin || !sessionData || (sessionData.sessionEnded && action !== executeEndSession) || isProcessingAdminAction || !hasSubmittedNickname) { // Allow end session even if ended, for UI cleanup
+    if (!isCurrentUserAdmin || !sessionData || (sessionData.sessionEnded && action !== executeEndSession) || isProcessingAdminAction || !hasSubmittedNickname) {
         if (!hasSubmittedNickname && isCurrentUserAdmin) {
             toast({title: "Set Nickname First", description: "Please set your admin nickname to manage the session.", variant: "default"});
         }
@@ -299,30 +314,52 @@ export default function SessionPage() {
     );
 
   const triggerEndSessionDialog = () => {
-    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || !hasSubmittedNickname) { // No sessionData.sessionEnded check here to allow triggering dialog even if already ended (for UI consistency)
+    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || !hasSubmittedNickname) { 
       return;
     }
     setShowEndSessionDialog(true);
   }
 
  const executeEndSession = async () => {
-    // This action can proceed even if sessionData.sessionEnded is true, to ensure UI consistency for admin.
     if (!isCurrentUserAdmin || !sessionData || !hasSubmittedNickname) {
       setShowEndSessionDialog(false);
       return;
     }
     
-    setIsProcessingAdminAction(true); // Set processing for this specific action
+    setIsProcessingAdminAction(true); 
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
-      if (!sessionData.sessionEnded) { // Only update Firestore if not already ended
-        await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
+      if (!sessionData.sessionEnded) { 
+        // Record final presenter's score if queue was active and ended by "End Session"
+        if (
+            sessionData.currentPresenterName &&
+            sessionData.currentPresenterName !== "End of Queue" &&
+            sessionData.presenterQueue && sessionData.presenterQueue.length > 0 &&
+            sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >= 0 && sessionData.currentPresenterIndex < sessionData.presenterQueue.length
+        ) {
+            const finalScore: PresenterScore = {
+                name: sessionData.currentPresenterName,
+                likes: sessionData.likeClicks,
+                dislikes: sessionData.dislikeClicks,
+                netScore: sessionData.likeClicks - sessionData.dislikeClicks,
+            };
+            await updateDoc(sessionDocRef, { 
+                presenterScores: arrayUnion(finalScore),
+                sessionEnded: true, 
+                isRoundActive: false 
+            });
+        } else {
+            await updateDoc(sessionDocRef, { 
+                sessionEnded: true, 
+                isRoundActive: false 
+            });
+        }
         toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
       } else {
         toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
       }
 
-      if (router.asPath.startsWith('/session/')) { // Check ensures we are on a session page
+      if (router.asPath.startsWith('/session/')) { 
          router.push('/');
       }
     } catch (error) {
@@ -336,7 +373,6 @@ export default function SessionPage() {
       setShowEndSessionDialog(false);
     }
   };
-
 
   const handleSetPresenterQueue = () =>
     handleAdminAction(
@@ -361,12 +397,13 @@ export default function SessionPage() {
                 likeClicks: 0,
                 dislikeClicks: 0,
                 isRoundActive: roundActive,
+                presenterScores: [], // Reset overall scores when queue is set/updated
             });
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
         },
         presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name.length > 0).length > 0
-            ? "Presenter list updated. Scores reset. Round started for the first presenter."
-            : "Presenter list cleared. Scores reset. Round closed (if it was presenter-driven).",
+            ? "Presenter list updated. Scores reset. Round started for the first presenter. Overall leaderboard reset."
+            : "Presenter list cleared. Scores reset. Round closed (if it was presenter-driven). Overall leaderboard reset.",
         "Could not update presenter list."
     );
 
@@ -377,17 +414,39 @@ export default function SessionPage() {
                 toast({ title: "No Presenters", description: "Presenter list is empty.", variant: "default" });
                 return;
             }
+            const sessionDocRef = doc(db, 'sessions', sessionId);
+            
+            // Record score for the current presenter BEFORE advancing
+            const currentPresenterName = sessionData.currentPresenterName;
+            const currentLikes = sessionData.likeClicks;
+            const currentDislikes = sessionData.dislikeClicks;
+
+            if (currentPresenterName && currentPresenterName !== "End of Queue" && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >=0) {
+                const scoreToRecord: PresenterScore = {
+                    name: currentPresenterName,
+                    likes: currentLikes,
+                    dislikes: currentDislikes,
+                    netScore: currentLikes - currentDislikes,
+                };
+                await updateDoc(sessionDocRef, { presenterScores: arrayUnion(scoreToRecord) });
+            }
+
+            // Now advance to the next presenter
             const currentIndex = sessionData.currentPresenterIndex ?? -1;
             const newIndex = currentIndex + 1;
 
             if (newIndex >= sessionData.presenterQueue.length) {
                 toast({ title: "End of Queue", description: "You have reached the end of the presenter list. Round closed.", variant: "default" });
-                await updateDoc(doc(db, 'sessions', sessionId), { isRoundActive: false, currentPresenterName: "End of Queue", likeClicks: 0, dislikeClicks: 0 });
+                await updateDoc(doc(db, 'sessions', sessionId), { 
+                    isRoundActive: false, 
+                    currentPresenterName: "End of Queue", 
+                    likeClicks: 0, 
+                    dislikeClicks: 0 
+                });
                 if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
                 return;
             }
 
-            const sessionDocRef = doc(db, 'sessions', sessionId);
             await updateDoc(sessionDocRef, {
                 currentPresenterIndex: newIndex,
                 currentPresenterName: sessionData.presenterQueue[newIndex],
@@ -397,12 +456,12 @@ export default function SessionPage() {
             });
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
         },
-        "Advanced to the next presenter. Scores reset and round started.",
+        "Advanced to the next presenter. Previous presenter's score recorded. Scores reset and round started.",
         "Could not advance to the next presenter."
     );
 
   const triggerKickParticipantDialog = (uid: string, nickname: string) => {
-    if (!isCurrentUserAdmin || isProcessingAdminAction || currentUser?.uid === uid) return;
+    if (!isCurrentUserAdmin || isProcessingAdminAction || authUser?.uid === uid) return;
     setParticipantToKick({ uid, nickname });
     setShowKickConfirmDialog(true);
   };
@@ -446,7 +505,7 @@ export default function SessionPage() {
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
-  if (isLoading && !sessionData) { 
+  if (authLoading || (isLoadingSession && !sessionData)) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <Skeleton className="h-10 w-64 mb-4" />
@@ -464,9 +523,6 @@ export default function SessionPage() {
   if (error && (!sessionData || sessionData.sessionEnded || error.includes("cannot be found") || error.includes("has ended"))) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
-        <div className="absolute top-4 right-4">
-            <ThemeToggleButton />
-        </div>
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
         <h1 className="text-2xl font-bold text-destructive mb-2">Session Status</h1>
         <p className="text-muted-foreground mb-6">{error}</p>
@@ -477,12 +533,9 @@ export default function SessionPage() {
     );
   }
   
-  if (currentUser && !hasSubmittedNickname && sessionData && !sessionData.sessionEnded) {
+  if (authUser && !hasSubmittedNickname && sessionData && !sessionData.sessionEnded) {
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-background">
-            <div className="absolute top-4 right-4">
-                <ThemeToggleButton />
-            </div>
             <Card className="w-full max-w-md shadow-xl">
                 <CardHeader>
                     <CardTitle className="text-2xl text-center">Enter Your Nickname</CardTitle>
@@ -516,11 +569,48 @@ export default function SessionPage() {
     );
   }
   
-  if (isLoading || !currentUser || !sessionData) {
+  // Fallback if authUser is null but session data might be partially loaded or trying to load
+  // This also covers the case where ensureAnonymousSignIn is in progress but not yet completed for a new user
+  if (!authUser && !authLoading && sessionData && !sessionData.sessionEnded && !hasSubmittedNickname) {
+     return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-background">
+          <Card className="w-full max-w-md shadow-xl">
+              <CardHeader>
+                  <CardTitle className="text-2xl text-center">Enter Your Nickname</CardTitle>
+                  <CardDescription className="text-center">
+                      Choose a nickname to join session <span className="font-bold">{sessionId}</span>. This cannot be changed later.
+                  </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                  <Input
+                      type="text"
+                      value={nicknameInput}
+                      onChange={(e) => setNicknameInput(e.target.value)}
+                      placeholder="Your nickname (e.g., AlphaLearner)"
+                      maxLength={25}
+                      disabled={isSavingNickname}
+                      className="text-lg h-12 text-center"
+                  />
+                  <Button 
+                      onClick={handleSetNickname} 
+                      disabled={isSavingNickname || !nicknameInput.trim()}
+                      className="w-full text-lg py-6"
+                  >
+                      {isSavingNickname ? 'Joining...' : <> <LogIn className="mr-2 h-5 w-5"/> Join Session </>}
+                  </Button>
+              </CardContent>
+          </Card>
+           <Button onClick={() => router.push('/')} variant="link" className="mt-6 text-muted-foreground">
+              <Home className="mr-2 h-4 w-4" /> Or go back to Homepage
+          </Button>
+      </main>
+    );
+  }
+
+  if (isLoadingSession || !sessionData) { // Generic loading if sessionData is null
      return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
-         <div className="absolute top-4 right-4"> <ThemeToggleButton /> </div>
-        <p className="text-lg text-muted-foreground animate-pulse">Loading session...</p>
+        <p className="text-lg text-muted-foreground animate-pulse">Loading session data...</p>
       </main>
     );
   }
@@ -578,13 +668,18 @@ export default function SessionPage() {
                                    isQueueAtEnd ||
                                    sessionData.currentPresenterIndex === -1;
 
-  const selfNickname = sessionData?.participants?.[currentUser?.uid]?.nickname;
+  const selfNickname = authUser ? sessionData?.participants?.[authUser.uid]?.nickname : undefined;
   const isSelfPresenter = !!(
+      authUser &&
       sessionData?.currentPresenterName &&
       selfNickname &&
       sessionData.currentPresenterName === selfNickname &&
       sessionData.currentPresenterName !== "End of Queue"
   );
+  
+  const showOverallLeaderboard = (sessionData.currentPresenterName === "End of Queue" || sessionData.sessionEnded) && 
+                                 sessionData.presenterScores && sessionData.presenterScores.length > 0;
+
 
   return (
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
@@ -597,9 +692,7 @@ export default function SessionPage() {
                     </span>
                  )}
             </div>
-            <div className="absolute top-0 right-0">
-                <ThemeToggleButton />
-            </div>
+            {/* Theme Toggle Button is now in global Header */}
             <div className="flex flex-col items-center justify-center mb-1">
                 <div className="flex items-center justify-center">
                     <h1 className="text-3xl sm:text-4xl md:text-5xl font-headline font-bold text-foreground">
@@ -657,6 +750,9 @@ export default function SessionPage() {
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                     isCurrentPresenterSelf={isSelfPresenter}
                 />
+                 {showOverallLeaderboard && (
+                    <OverallLeaderboard presenterScores={sessionData.presenterScores!} />
+                )}
             </section>
 
             <section className={cn(
@@ -674,9 +770,9 @@ export default function SessionPage() {
                             <ScrollArea className="h-40">
                             <ul className="space-y-1">
                                 {participantList.map(p => (
-                                <li key={p.uid} className={`flex justify-between items-center p-1 text-xs hover:bg-muted/50 dark:hover:bg-muted/70 rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                                <li key={p.uid} className={`flex justify-between items-center p-1 text-xs hover:bg-muted/50 dark:hover:bg-muted/70 rounded ${authUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
                                     <span>{p.nickname || 'Anonymous User'}</span>
-                                    {isCurrentUserAdmin && currentUser?.uid !== p.uid && !sessionData.sessionEnded && (
+                                    {isCurrentUserAdmin && authUser?.uid !== p.uid && !sessionData.sessionEnded && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <Button
@@ -957,5 +1053,3 @@ export default function SessionPage() {
     </main>
   );
 }
-
-    

@@ -1,42 +1,43 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { db } from '@/lib/firebase'; // auth is now managed by AuthContext
+import { useAuth } from '@/contexts/auth-context'; // Import useAuth
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowRight, PlusCircle, UserPlus } from 'lucide-react';
+import { ArrowRight, PlusCircle, UserCircle } from 'lucide-react'; // Changed UserPlus to UserCircle
 
 export default function HomePage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [joinCode, setJoinCode] = useState('');
-  const [isCreatingQuick, setIsCreatingQuick] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const { user, loading: authLoading, ensureAnonymousSignIn, signInWithGoogle } = useAuth(); // Use auth context
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+  const [joinCode, setJoinCode] = useState('');
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
 
   const generateSessionCode = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const handleCreateQuickSession = async () => {
-    setIsCreatingQuick(true);
-    if (!auth.currentUser) {
-      toast({ title: "Authentication Error", description: "Please wait for authentication to complete and try again.", variant: "destructive" });
-      setIsCreatingQuick(false);
+  const createSession = async (isAccountSession: boolean) => {
+    setIsCreatingSession(true);
+    let currentUser = user;
+
+    if (!currentUser && !isAccountSession) { // For "Quick Start", ensure anonymous
+      currentUser = await ensureAnonymousSignIn();
+    }
+    
+    if (!currentUser) {
+      toast({ title: "Authentication Required", description: isAccountSession ? "Please sign in with Google to create an account session." : "Could not start an anonymous session.", variant: "destructive" });
+      if(isAccountSession && !user) await signInWithGoogle(); // Prompt Google sign-in if trying account session and not logged in
+      setIsCreatingSession(false);
       return;
     }
 
@@ -44,7 +45,7 @@ export default function HomePage() {
     try {
       const sessionRef = doc(db, 'sessions', newSessionId);
       await setDoc(sessionRef, {
-        adminUid: auth.currentUser.uid,
+        adminUid: currentUser.uid,
         isRoundActive: true,
         likeClicks: 0,
         dislikeClicks: 0,
@@ -53,27 +54,31 @@ export default function HomePage() {
         soundsEnabled: true,
         resultsVisible: true,
         participants: {},
-        sessionType: 'quick',
+        sessionType: isAccountSession ? 'account' : 'quick', // Set sessionType
         presenterQueue: [],
         currentPresenterIndex: -1,
         currentPresenterName: "",
+        presenterScores: [], // Initialize presenterScores
       });
-      toast({ title: "Quick Session Created!", description: `Your session code is ${newSessionId}. Redirecting...` });
+      toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
     } catch (error) {
-      console.error("Error creating quick session: ", error);
+      console.error(`Error creating ${isAccountSession ? 'account' : 'quick'} session: `, error);
       toast({ title: "Error", description: "Could not create session. Please try again.", variant: "destructive" });
-      setIsCreatingQuick(false);
     }
+    setIsCreatingSession(false);
   };
+  
+  const handleCreateQuickSession = () => createSession(false);
+  const handleCreateAccountSession = () => {
+    if (!user || user.isAnonymous) {
+        toast({ title: "Sign In Required", description: "Please sign in with Google to create an account-based session.", variant: "default" });
+        signInWithGoogle();
+        return;
+    }
+    createSession(true);
+  }
 
-  const handleCreateWithAccountPlaceholder = () => {
-    toast({
-      title: "Coming Soon!",
-      description: "Account-based sessions with full features are under development. Please use 'Quick Start' for now.",
-      duration: 5000,
-    });
-  };
 
   const handleJoinSession = async () => {
     if (!joinCode.match(/^\d{6}$/)) {
@@ -81,6 +86,16 @@ export default function HomePage() {
       return;
     }
     setIsJoining(true);
+    // Ensure user is at least anonymously signed in before trying to join.
+    // This is important if they land here without any prior auth state.
+    if (!user) { 
+        const signedInUser = await ensureAnonymousSignIn();
+        if (!signedInUser) {
+            setIsJoining(false);
+            return; // Error handled by ensureAnonymousSignIn
+        }
+    }
+
     try {
       const sessionRef = doc(db, 'sessions', joinCode);
       const sessionSnap = await getDoc(sessionRef);
@@ -100,12 +115,9 @@ export default function HomePage() {
     setIsJoining(false);
   };
 
-  const createQuickButtonDisabled = isCreatingQuick || isAuthLoading || !auth.currentUser;
-  const createQuickButtonText = () => {
-    if (isAuthLoading || !auth.currentUser) return 'Authenticating...';
-    if (isCreatingQuick) return 'Creating...';
-    return 'Quick Start (No Account)';
-  };
+  const createQuickButtonDisabled = isCreatingSession || authLoading;
+  const createAccountButtonDisabled = isCreatingSession || authLoading || (!user || user.isAnonymous);
+
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-6 sm:p-12 md:p-16 bg-background">
@@ -137,21 +149,22 @@ export default function HomePage() {
                 className="w-full text-lg py-6"
                 disabled={createQuickButtonDisabled}
               >
-                {createQuickButtonText()}
+                {isCreatingSession && !user?.isAnonymous ? 'Creating...' : 'Quick Start (Anonymous)'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
                 No account needed. Core features for immediate use.
               </p>
               <Button
-                onClick={handleCreateWithAccountPlaceholder}
+                onClick={handleCreateAccountSession}
                 className="w-full text-lg py-6"
                 variant="outline"
-                disabled={isAuthLoading}
+                disabled={createAccountButtonDisabled}
               >
-                <UserPlus className="mr-2 h-5 w-5"/> Full Features (Account)
+                <UserCircle className="mr-2 h-5 w-5"/> 
+                {user && !user.isAnonymous ? 'Create Account Session' : 'Sign in for Account Session'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                Sign in (coming soon!) for advanced features like saving session setups.
+                Sign in with Google to link sessions to your account (future features).
               </p>
             </CardContent>
           </Card>
@@ -173,7 +186,7 @@ export default function HomePage() {
               <Button
                 onClick={handleJoinSession}
                 className="w-full text-lg py-6"
-                disabled={isJoining || joinCode.length !== 6}
+                disabled={isJoining || joinCode.length !== 6 || authLoading}
               >
                 {isJoining ? 'Joining...' : 'Join Session'}
               </Button>
@@ -197,5 +210,3 @@ export default function HomePage() {
     </main>
   );
 }
-
-    
