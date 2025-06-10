@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
@@ -33,7 +33,7 @@ import {
   } from "@/components/ui/accordion";
 import {
     Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, Send, Info, UserPlusIcon, LogIn
+    ListChecks, ChevronsRight, Send, Info, UserPlusIcon, LogIn, UserX
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -63,6 +63,11 @@ interface SessionData {
   sessionType?: string;
 }
 
+interface ParticipantToKick {
+  uid: string;
+  nickname: string;
+}
+
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -83,6 +88,8 @@ export default function SessionPage() {
 
   const [presenterQueueInput, setPresenterQueueInput] = useState('');
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
+  const [showKickConfirmDialog, setShowKickConfirmDialog] = useState(false);
+  const [participantToKick, setParticipantToKick] = useState<ParticipantToKick | null>(null);
 
 
   useEffect(() => {
@@ -117,19 +124,29 @@ export default function SessionPage() {
 
         if (data.sessionEnded) {
           setError("This session has ended.");
-          if (!currentUser || !data.participants?.[currentUser.uid]) {
-            setHasSubmittedNickname(false); // Prevent nickname submission if session ended and no nickname set
+          // If current user was kicked and then session ended, they should see the session ended message
+          // and not be prompted for a nickname again.
+          if (currentUser && !data.participants?.[currentUser.uid] && hasSubmittedNickname) {
+             // User was likely kicked, keep hasSubmittedNickname true to avoid re-prompting
+          } else if (!currentUser || !data.participants?.[currentUser.uid]) {
+            setHasSubmittedNickname(false); 
           }
         } else {
           setError(null);
         }
+        
+        if (currentUser && !data.participants?.[currentUser.uid] && hasSubmittedNickname && !data.sessionEnded) {
+            toast({ title: "Removed from session", description: "You have been removed from this session by the admin.", variant: "destructive" });
+            router.push('/'); // Redirect if kicked
+            return;
+        }
 
-        // Check if current user already has a nickname in this session
+
         if (currentUser && data.participants?.[currentUser.uid]?.nickname) {
           setNicknameInput(data.participants[currentUser.uid].nickname);
           setHasSubmittedNickname(true);
-        } else if (currentUser) {
-          setHasSubmittedNickname(false); // Prompt for nickname if not yet set
+        } else if (currentUser && !data.sessionEnded) { // only prompt if session not ended
+          setHasSubmittedNickname(false); 
         }
 
       } else {
@@ -145,7 +162,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, currentUser]);
+  }, [sessionId, router, toast, currentUser, hasSubmittedNickname]);
 
 
   useEffect(() => {
@@ -161,7 +178,7 @@ export default function SessionPage() {
       toast({ title: "Cannot set nickname", description: "Nickname is required or session has ended.", variant: "destructive"});
       return;
     }
-    if (hasSubmittedNickname) { // Nickname already set and is immutable
+    if (hasSubmittedNickname) { 
         toast({ title: "Nickname Set", description: "Your nickname for this session is already set.", variant: "default"});
         return;
     }
@@ -169,7 +186,6 @@ export default function SessionPage() {
     setIsSavingNickname(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
-      // Fetch fresh session data for uniqueness check
       const currentSessionSnap = await getDoc(sessionDocRef);
       if (!currentSessionSnap.exists()) {
         toast({ title: "Error", description: "Session not found.", variant: "destructive" });
@@ -193,13 +209,13 @@ export default function SessionPage() {
 
       const newParticipantData: ParticipantData = {
         nickname: trimmedNickname,
-        joinedAt: serverTimestamp() // Always set on first submission
+        joinedAt: serverTimestamp() 
       };
       await updateDoc(sessionDocRef, {
         [`participants.${currentUser.uid}`]: newParticipantData
       });
       toast({ title: "Nickname Set!", description: `You have joined the session as "${trimmedNickname}".` });
-      setHasSubmittedNickname(true); // Lock input and show main content
+      setHasSubmittedNickname(true); 
     } catch (error) {
       console.error("Error setting nickname: ", error);
       let errorMessageText = "Could not save nickname.";
@@ -211,7 +227,7 @@ export default function SessionPage() {
   };
 
   const handleAdminAction = async (action: () => Promise<void>, successMessage: string, errorMessage: string) => {
-    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || isProcessingAdminAction || !hasSubmittedNickname) {
+    if (!isCurrentUserAdmin || !sessionData || (sessionData.sessionEnded && action !== executeEndSession) || isProcessingAdminAction || !hasSubmittedNickname) { // Allow end session even if ended, for UI cleanup
         if (!hasSubmittedNickname && isCurrentUserAdmin) {
             toast({title: "Set Nickname First", description: "Please set your admin nickname to manage the session.", variant: "default"});
         }
@@ -220,9 +236,9 @@ export default function SessionPage() {
     setIsProcessingAdminAction(true);
     try {
       await action();
-      toast({ title: "Admin Action Successful", description: successMessage });
+      if (successMessage) toast({ title: "Admin Action Successful", description: successMessage });
     } catch (error) {
-      console.error(`Error during admin action (${successMessage}): `, error);
+      console.error(`Error during admin action (${successMessage || 'unknown action'}): `, error);
       let displayError = errorMessage;
       if (error instanceof FirestoreError) displayError = `${errorMessage} (Code: ${error.code})`;
       toast({ title: "Error", description: displayError, variant: "destructive" });
@@ -283,25 +299,31 @@ export default function SessionPage() {
     );
 
   const triggerEndSessionDialog = () => {
-    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || !hasSubmittedNickname) {
+    if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || !hasSubmittedNickname) { // No sessionData.sessionEnded check here to allow triggering dialog even if already ended (for UI consistency)
       return;
     }
     setShowEndSessionDialog(true);
   }
 
  const executeEndSession = async () => {
-    setIsProcessingAdminAction(true);
+    // This action can proceed even if sessionData.sessionEnded is true, to ensure UI consistency for admin.
+    if (!isCurrentUserAdmin || !sessionData || !hasSubmittedNickname) {
+      setShowEndSessionDialog(false);
+      return;
+    }
+    
+    setIsProcessingAdminAction(true); // Set processing for this specific action
     try {
-      if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || !hasSubmittedNickname) {
-        setShowEndSessionDialog(false);
-        setIsProcessingAdminAction(false);
-        return;
-      }
       const sessionDocRef = doc(db, 'sessions', sessionId);
-      await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
-      toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
-      if (sessionData && sessionData.adminUid === currentUser?.uid) {
-          router.push('/');
+      if (!sessionData.sessionEnded) { // Only update Firestore if not already ended
+        await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false });
+        toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
+      } else {
+        toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
+      }
+
+      if (router.asPath.startsWith('/session/')) { // Check ensures we are on a session page
+         router.push('/');
       }
     } catch (error) {
       console.error("Error ending session details: ", error);
@@ -312,11 +334,6 @@ export default function SessionPage() {
     } finally {
       setIsProcessingAdminAction(false);
       setShowEndSessionDialog(false);
-       if (sessionData && sessionData.adminUid === currentUser?.uid && sessionData.sessionEnded) {
-          if (router.asPath.startsWith('/session/')) {
-            router.push('/');
-          }
-       }
     }
   };
 
@@ -384,6 +401,30 @@ export default function SessionPage() {
         "Could not advance to the next presenter."
     );
 
+  const triggerKickParticipantDialog = (uid: string, nickname: string) => {
+    if (!isCurrentUserAdmin || isProcessingAdminAction || currentUser?.uid === uid) return;
+    setParticipantToKick({ uid, nickname });
+    setShowKickConfirmDialog(true);
+  };
+
+  const executeKickParticipant = () => {
+    if (!participantToKick) return;
+    handleAdminAction(
+      async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, {
+          [`participants.${participantToKick.uid}`]: deleteField()
+        });
+      },
+      `Participant "${participantToKick.nickname}" has been kicked.`,
+      `Could not kick participant "${participantToKick.nickname}".`
+    ).finally(() => {
+      setParticipantToKick(null);
+      setShowKickConfirmDialog(false);
+    });
+  };
+
+
   const isPresenterQueueEffectivelyEmpty = !sessionData?.presenterQueue || sessionData.presenterQueue.length === 0;
 
   const isSpecificPresenterActive = !isPresenterQueueEffectivelyEmpty &&
@@ -405,7 +446,7 @@ export default function SessionPage() {
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
-  if (isLoading && !sessionData) { // Show skeleton only during initial load without any session data yet
+  if (isLoading && !sessionData) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <Skeleton className="h-10 w-64 mb-4" />
@@ -436,7 +477,6 @@ export default function SessionPage() {
     );
   }
   
-  // If user is authenticated but hasn't submitted a nickname, show nickname form
   if (currentUser && !hasSubmittedNickname && sessionData && !sessionData.sessionEnded) {
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-background">
@@ -476,7 +516,6 @@ export default function SessionPage() {
     );
   }
   
-  // If loading session data for an already-nicknamed user, or if auth is pending
   if (isLoading || !currentUser || !sessionData) {
      return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
@@ -492,7 +531,6 @@ export default function SessionPage() {
     .sort((a, b) => {
         const timeAValue = a.joinedAt;
         const timeBValue = b.joinedAt;
-        // Handle both Firestore Timestamp and serverTimestamp FieldValue during optimistic updates
         const timeA = timeAValue instanceof Timestamp ? timeAValue.toMillis() : (typeof (timeAValue as any)?.seconds === 'number' ? (timeAValue as any).seconds * 1000 : Date.now());
         const timeB = timeBValue instanceof Timestamp ? timeBValue.toMillis() : (typeof (timeBValue as any)?.seconds === 'number' ? (timeBValue as any).seconds * 1000 : Date.now());
         return timeA - timeB;
@@ -520,7 +558,7 @@ export default function SessionPage() {
       sessionStatusMessage = isCurrentUserAdmin ?
           (sessionData.isRoundActive ? "General feedback round is OPEN. You can also start the presentations." : "Admin can start the presentations or open a general feedback round.") :
           (sessionData.isRoundActive ? "General feedback round is OPEN." : "Waiting for admin to start presentations or open a general round.");
-  } else { // General session (no presenter queue or queue not started)
+  } else { 
       presenterDisplayMessage = isCurrentUserAdmin ? "No presenter list. Run a general feedback round or add presenters." : "General feedback session.";
       sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is CLOSED.";
   }
@@ -610,7 +648,7 @@ export default function SessionPage() {
 
             <section className={cn(
                 "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" // Main content takes more space
+                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
             )}>
                 <Leaderboard
                     sessionId={sessionId}
@@ -623,7 +661,7 @@ export default function SessionPage() {
 
             <section className={cn(
                 "space-y-4",
-                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5" // Sidebar content takes less space
+                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5" 
             )}>
                  {(participantList.length > 0 ) && (
                     <Card className="w-full shadow-lg">
@@ -636,8 +674,24 @@ export default function SessionPage() {
                             <ScrollArea className="h-40">
                             <ul className="space-y-1">
                                 {participantList.map(p => (
-                                <li key={p.uid} className={`p-1 text-sm rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
-                                    {p.nickname || 'Anonymous User'}
+                                <li key={p.uid} className={`flex justify-between items-center p-1 text-xs hover:bg-muted/50 dark:hover:bg-muted/70 rounded ${currentUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                                    <span>{p.nickname || 'Anonymous User'}</span>
+                                    {isCurrentUserAdmin && currentUser?.uid !== p.uid && !sessionData.sessionEnded && (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                    onClick={() => triggerKickParticipantDialog(p.uid, p.nickname || 'Anonymous User')}
+                                                    disabled={isProcessingAdminAction}
+                                                >
+                                                    <UserX className="mr-1 h-3 w-3"/> Kick
+                                                </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent><p>Remove {p.nickname || 'this user'} from session</p></TooltipContent>
+                                        </Tooltip>
+                                    )}
                                 </li>
                                 ))}
                             </ul>
@@ -822,7 +876,7 @@ export default function SessionPage() {
 
                             <div className="mt-6 pt-6 border-t dark:border-gray-700">
                                 <div className="flex items-center">
-                                    <Button onClick={triggerEndSessionDialog} variant="destructive" className="w-full" disabled={isProcessingAdminAction}>
+                                    <Button onClick={triggerEndSessionDialog} variant="destructive" className="w-full" disabled={isProcessingAdminAction && !showEndSessionDialog}>
                                         <Trash2 className="mr-2 h-4 w-4" /> End Session
                                     </Button>
                                     <Tooltip>
@@ -874,14 +928,34 @@ export default function SessionPage() {
                 </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => setShowEndSessionDialog(false)} disabled={isProcessingAdminAction}>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={executeEndSession} disabled={isProcessingAdminAction}>
-                    {isProcessingAdminAction ? "Ending..." : "Yes, End Session"}
+                <AlertDialogCancel onClick={() => setShowEndSessionDialog(false)} disabled={isProcessingAdminAction && showEndSessionDialog}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={executeEndSession} disabled={isProcessingAdminAction && showEndSessionDialog}>
+                    {(isProcessingAdminAction && showEndSessionDialog) ? "Ending..." : "Yes, End Session"}
                 </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
+
+        <AlertDialog open={showKickConfirmDialog} onOpenChange={setShowKickConfirmDialog}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Kick</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Are you sure you want to remove "<span className="font-semibold">{participantToKick?.nickname}</span>" from the session? They will be immediately disconnected.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => { setShowKickConfirmDialog(false); setParticipantToKick(null);}} disabled={isProcessingAdminAction && showKickConfirmDialog}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={executeKickParticipant} className={buttonVariants({variant: "destructive"})} disabled={isProcessingAdminAction && showKickConfirmDialog}>
+                    {(isProcessingAdminAction && showKickConfirmDialog) ? "Kicking..." : "Yes, Kick Participant"}
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
       </TooltipProvider>
     </main>
   );
 }
+
+    
