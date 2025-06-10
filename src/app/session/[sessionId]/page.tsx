@@ -462,6 +462,13 @@ export default function SessionPage() {
                                    isQueueAtEnd ||
                                    sessionData.currentPresenterIndex === -1;
 
+  const selfNickname = sessionData?.participants?.[currentUser?.uid]?.nickname;
+  const isSelfPresenter = !!(
+      sessionData?.currentPresenterName &&
+      selfNickname &&
+      sessionData.currentPresenterName === selfNickname &&
+      sessionData.currentPresenterName !== "End of Queue"
+  );
 
   return (
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
@@ -547,6 +554,7 @@ export default function SessionPage() {
                     resultsVisible={sessionData.resultsVisible}
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
+                    isCurrentPresenterSelf={isSelfPresenter}
                 />
             </section>
 
@@ -814,5 +822,3 @@ export default function SessionPage() {
     </main>
   );
 }
-
-    

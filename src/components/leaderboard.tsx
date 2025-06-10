@@ -16,11 +16,12 @@ interface Scores {
 interface LeaderboardProps {
   sessionId: string;
   resultsVisible: boolean;
-  currentPresenterName?: string | null; // Name of the current presenter
-  presenterQueueEmpty?: boolean; // True if presenter queue is not set or empty
+  currentPresenterName?: string | null;
+  presenterQueueEmpty?: boolean;
+  isCurrentPresenterSelf?: boolean; // New prop
 }
 
-const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, currentPresenterName, presenterQueueEmpty }) => {
+const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, currentPresenterName, presenterQueueEmpty, isCurrentPresenterSelf }) => {
   const [scores, setScores] = useState<Scores | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,22 +52,27 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
     return () => unsubscribe();
   }, [sessionId]);
 
+  const showScoresForSelf = isCurrentPresenterSelf && currentPresenterName && currentPresenterName !== "End of Queue";
+  const canShowScores = resultsVisible || showScoresForSelf;
+
   const getCardTitleText = () => {
-    if (!resultsVisible) return "Live Leaderboard";
+    if (!canShowScores && !resultsVisible) return "Live Leaderboard"; // Default if everything is hidden
+
     if (currentPresenterName && currentPresenterName !== "End of Queue") {
+      if (showScoresForSelf && !resultsVisible) {
+        return `Your Scores: ${currentPresenterName}`;
+      }
       return `Scores for: ${currentPresenterName}`;
     }
     if (currentPresenterName === "End of Queue") {
       return "Final Scores (Queue Ended)";
     }
-    // If presenterQueueEmpty is true, or currentPresenterName is null/empty (and not "End of Queue")
     return "Live Leaderboard (General Session)";
   };
   
   const cardTitleText = getCardTitleText();
-  const showQueueEndedMessage = resultsVisible && currentPresenterName === "End of Queue";
-  // Message when no specific presenter is active but results are visible and queue isn't necessarily empty (e.g., admin hasn't started queue yet, or queue is empty)
-  const showGeneralOrWaitingMessage = resultsVisible && !currentPresenterName && presenterQueueEmpty;
+  const showQueueEndedMessage = canShowScores && currentPresenterName === "End of Queue";
+  const showGeneralOrWaitingMessage = canShowScores && !currentPresenterName && presenterQueueEmpty;
 
 
   if (loading) {
@@ -98,7 +104,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
     );
   }
 
-  if (!resultsVisible) {
+  if (!canShowScores) {
     return (
       <Card className="w-full shadow-lg">
         <CardHeader>
@@ -115,7 +121,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ sessionId, resultsVisible, cu
     );
   }
   
-  if (showGeneralOrWaitingMessage && !currentPresenterName) { // Catches "General Session" or "Waiting for admin if queue is defined but not started"
+  if (showGeneralOrWaitingMessage && !currentPresenterName) {
      return (
       <Card className="w-full shadow-lg">
         <CardHeader>
