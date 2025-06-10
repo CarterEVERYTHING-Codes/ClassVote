@@ -82,6 +82,7 @@ export default function SessionPage() {
   const [presenterQueueInput, setPresenterQueueInput] = useState('');
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
 
+
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -152,9 +153,10 @@ export default function SessionPage() {
     setIsSavingNickname(true);
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
+      const currentParticipantData = sessionData.participants?.[currentUser.uid];
       const newParticipantData: ParticipantData = {
         nickname: nicknameInput.trim(),
-        joinedAt: sessionData.participants?.[currentUser.uid]?.joinedAt || serverTimestamp()
+        joinedAt: currentParticipantData?.joinedAt || serverTimestamp()
       };
       await updateDoc(sessionDocRef, {
         [`participants.${currentUser.uid}`]: newParticipantData
@@ -162,7 +164,10 @@ export default function SessionPage() {
       toast({ title: "Nickname Updated!", description: `You are now "${nicknameInput.trim()}".` });
     } catch (error) {
       console.error("Error setting nickname: ", error);
-      toast({ title: "Error", description: "Could not save nickname.", variant: "destructive" });
+      let errorMessageText = "Could not save nickname.";
+      if (error instanceof FirestoreError) errorMessageText = `Could not save nickname: ${error.message} (Code: ${error.code})`;
+      else if (error instanceof Error) errorMessageText = `Could not save nickname: ${error.message}`;
+      toast({ title: "Error", description: errorMessageText, variant: "destructive" });
     }
     setIsSavingNickname(false);
   };
@@ -414,6 +419,8 @@ export default function SessionPage() {
         const timeB = timeBValue instanceof Timestamp ? timeBValue.toMillis() : (typeof (timeBValue as any)?.seconds === 'number' ? (timeBValue as any).seconds * 1000 : Date.now());
         return timeA - timeB;
     });
+  
+  const currentParticipantCount = Object.keys(sessionData.participants || {}).length;
 
   const isQueueAtEnd = !isPresenterQueueEffectivelyEmpty &&
                        sessionData.currentPresenterIndex !== undefined &&
@@ -463,18 +470,24 @@ export default function SessionPage() {
             <div className="absolute top-0 right-0">
                 <ThemeToggleButton />
             </div>
-            <div className="flex items-center justify-center mb-1">
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-headline font-bold text-foreground">
-                    Session: {sessionId}
-                </h1>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button onClick={copySessionCode} variant="ghost" size="icon" className="ml-2 text-muted-foreground hover:text-foreground">
-                            <Copy className="h-5 w-5" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent><p>Copy Session Code</p></TooltipContent>
-                </Tooltip>
+            <div className="flex flex-col items-center justify-center mb-1">
+                <div className="flex items-center justify-center">
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-headline font-bold text-foreground">
+                        Session: {sessionId}
+                    </h1>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button onClick={copySessionCode} variant="ghost" size="icon" className="ml-2 text-muted-foreground hover:text-foreground">
+                                <Copy className="h-5 w-5" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent><p>Copy Session Code</p></TooltipContent>
+                    </Tooltip>
+                </div>
+                <div className="flex items-center justify-center mt-1 text-sm text-muted-foreground">
+                    <Users className="mr-1.5 h-4 w-4" />
+                    <span>{currentParticipantCount} Participant{currentParticipantCount === 1 ? '' : 's'}</span>
+                </div>
             </div>
             {presenterDisplayMessage && (
                 <p className={`text-xl md:text-2xl font-semibold ${isSpecificPresenterActive ? 'text-accent' : 'text-muted-foreground'}`}>{presenterDisplayMessage}</p>
@@ -484,7 +497,7 @@ export default function SessionPage() {
             </p>
              {!sessionData.sessionEnded && !feedbackSubmissionAllowed && sessionData.isRoundActive && (
                 <p className="text-sm text-orange-500 mt-1">
-                    Submissions (votes, takeaways, Q&A) are paused until the admin selects an active presenter or if the queue has ended.
+                    Submissions (votes) are paused until the admin selects an active presenter or if the queue has ended.
                 </p>
             )}
         </div>
