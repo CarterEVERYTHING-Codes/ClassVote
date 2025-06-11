@@ -275,12 +275,12 @@ ClassVote is a real-time, interactive web application where users create or join
             *   `localhost`
             *   `localhost:*` (wildcard for any port)
             *   `http://localhost:YOUR_PORT_NUMBER` (e.g., `http://localhost:9002`)
-            *   **If using Google Cloud Workstations or similar port-forwarding:** Add the specific `https://<your-workstation-subdomain>.cloudworkstations.dev/*` pattern that appears in the error message (e.g., `https://6000-my-workstation.cluster-xyz.cloudworkstations.dev/*`).
+            *   **If using Google Cloud Workstations or similar port-forwarding:** Add the specific `https://<your-workstation-subdomain>.cloudworkstations.dev/*` pattern that appears in the error message (e.g., `https://6000-my-workstation.cluster-xyz.cloudworkstations.dev/*`). Make sure to include `https://` and the trailing `/*`.
         *   Under **API restrictions**, if "Restrict key" is chosen, ensure **"Identity Toolkit API"** is in the list of allowed APIs. "Don't restrict key" is often simpler for development (but less secure for production).
         *   **Click SAVE at the bottom of the GCP page.** Changes can take a few minutes to propagate.
 
     *   **Troubleshooting "The requested action is invalid" error (on `...firebaseapp.com/__/auth/handler` page):**
-        This usually means an issue with your `firebaseConfig` values in `src/lib/firebase.ts` or your Google Sign-In provider setup in Firebase.
+        This usually means an issue with your `firebaseConfig` values in `src/lib/firebase.ts` or your Google Sign-In provider setup in Firebase, or deeper settings in Google Cloud.
         1.  **Re-verify `apiKey` and `authDomain` in `src/lib/firebase.ts`:** This is the MOST critical. Go to Firebase Console > Project settings (gear icon) > General > Your apps > Web App. Compare the `apiKey` and `authDomain` there with what's in your file. They MUST be IDENTICAL. The `authDomain` should be `YOUR_PROJECT_ID.firebaseapp.com`.
         2.  **Check Google Sign-In Provider in Firebase Console:** Go to Authentication > Sign-in method > Google.
             *   Ensure it's "Enabled".
@@ -289,6 +289,12 @@ ClassVote is a real-time, interactive web application where users create or join
         3.  **Check OAuth Consent Screen in GCP:** Go to GCP Console > APIs & Services > OAuth consent screen.
             *   If "Publishing status" is "Testing", add your Google account email to the "Test users" list.
             *   Ensure "App name", "User support email", and "Developer contact information" are filled.
+        4.  **Advanced - Check OAuth 2.0 Client ID in GCP:**
+            *   In GCP Console, go to APIs & Services > Credentials.
+            *   Under "OAuth 2.0 Client IDs", find the client ID that was likely auto-created by Firebase (e.g., "Web client (auto created by Firebase)"). Click its name.
+            *   **Verify "Authorized JavaScript origins":** This list MUST include `https://YOUR_PROJECT_ID.firebaseapp.com` AND your app's origin (e.g., `https://YOUR_CLOUD_WORKSTATION_URL`, `http://localhost:PORT`).
+            *   **Verify "Authorized redirect URIs":** This list MUST include `https://YOUR_PROJECT_ID.firebaseapp.com/__/auth/handler`.
+            *   If these are incorrect, it can cause this error. Firebase *should* manage these, but discrepancies can occur. Modifying these directly is an advanced step; proceed with caution.
 
 
 4.  **Run the Development Server:**
@@ -326,3 +332,4 @@ ClassVote is a real-time, interactive web application where users create or join
 *   More detailed user profiles.
 
     
+
