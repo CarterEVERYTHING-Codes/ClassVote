@@ -10,30 +10,18 @@ import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowRight, PlusCircle, UserCircle, Mail, KeyRound, LogIn, UserPlus, AlertTriangle, LogOut } from 'lucide-react';
+import { ArrowRight, PlusCircle, UserCircle } from 'lucide-react';
 import type { User as FirebaseUser } from 'firebase/auth';
 
 export default function HomePage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { user, loading: authLoading, ensureAnonymousSignIn, signInWithGoogle, signUpWithEmail, signInWithEmail } = useAuth();
+  const { user, loading: authLoading, ensureAnonymousSignIn } = useAuth();
 
   const [joinCode, setJoinCode] = useState('');
-  const [isProcessingSessionAction, setIsProcessingSessionAction] = useState(false); // General purpose for session creation/joining
+  const [isProcessingSessionAction, setIsProcessingSessionAction] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
-
-  // State for new dialogs
-  const [showSignInPromptDialog, setShowSignInPromptDialog] = useState(false);
-  const [showEmailAuthDialog, setShowEmailAuthDialog] = useState(false);
-  const [emailAuthActionType, setEmailAuthActionType] = useState<'signIn' | 'signUp' | null>(null); // For email dialog
-  const [triggeredByCreateAccount, setTriggeredByCreateAccount] = useState(false); // To know if auth dialog was opened via "Create Account Session"
-
-  // State for email/password inputs (now primarily for the dialog)
-  const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-  const [isProcessingAuth, setIsProcessingAuth] = useState(false); // For any auth operation
 
   const generateSessionCode = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -71,9 +59,6 @@ export default function HomePage() {
       toast({ title: "Error", description: "Could not create session. Please try again.", variant: "destructive" });
     }
     setIsProcessingSessionAction(false);
-    // Close any open auth dialogs
-    setShowSignInPromptDialog(false);
-    setShowEmailAuthDialog(false);
   };
 
   const handleCreateQuickSession = async () => {
@@ -95,8 +80,9 @@ export default function HomePage() {
     if (user && !user.isAnonymous) {
       createSession(true, user);
     } else {
-      setTriggeredByCreateAccount(true);
-      setShowSignInPromptDialog(true);
+      // Redirect to the /auth page if user is not signed in non-anonymously
+      toast({ title: "Sign In Required", description: "Please sign in or sign up to create an account-linked session. Redirecting...", variant: "default" });
+      router.push('/auth');
     }
   };
 
@@ -105,12 +91,13 @@ export default function HomePage() {
       toast({ title: "Invalid Code", description: "Session code must be 6 digits.", variant: "destructive" });
       return;
     }
-    setIsJoining(true); // Use dedicated state for joining
+    setIsJoining(true);
     let activeUser = user;
     if (!activeUser) {
       activeUser = await ensureAnonymousSignIn();
       if (!activeUser) {
         setIsJoining(false);
+        toast({ title: "Join Failed", description: "Could not establish a session to join. Please try again.", variant: "destructive" });
         return;
       }
     }
@@ -133,62 +120,8 @@ export default function HomePage() {
     }
     setIsJoining(false);
   };
-
-  const handleGoogleSignInAndPotentiallyCreateSession = async () => {
-    setIsProcessingAuth(true);
-    const signedInUser = await signInWithGoogle();
-    if (signedInUser) {
-      if (triggeredByCreateAccount) {
-        await createSession(true, signedInUser);
-        setTriggeredByCreateAccount(false); // Reset flag
-      }
-      setShowSignInPromptDialog(false); // Close prompt dialog regardless
-    }
-    setIsProcessingAuth(false);
-  };
-
-  const openEmailAuthDialogForAction = (action: 'signIn' | 'signUp', fromCreateAccount: boolean) => {
-    setEmailAuthActionType(action);
-    setTriggeredByCreateAccount(fromCreateAccount); // Set if email auth is for creating a session
-    setShowEmailAuthDialog(true);
-    setShowSignInPromptDialog(false); // Close the prompt dialog if it was open
-  };
-
-  const handleEmailAuthSubmit = async () => {
-    if (!emailInput || !passwordInput || !emailAuthActionType) {
-      toast({ title: "Missing Fields", description: "Please enter both email and password.", variant: "destructive" });
-      return;
-    }
-    setIsProcessingAuth(true);
-    let signedInUser: FirebaseUser | null = null;
-    if (emailAuthActionType === 'signUp') {
-      signedInUser = await signUpWithEmail(emailInput, passwordInput);
-    } else {
-      signedInUser = await signInWithEmail(emailInput, passwordInput);
-    }
-
-    if (signedInUser) {
-      if (triggeredByCreateAccount) {
-        await createSession(true, signedInUser);
-      }
-      setShowEmailAuthDialog(false);
-      setEmailInput('');
-      setPasswordInput('');
-      setTriggeredByCreateAccount(false); // Reset flag
-    }
-    setIsProcessingAuth(false);
-  };
   
-  // Effect to reset triggeredByCreateAccount if dialogs are closed manually
-  useEffect(() => {
-    if (!showSignInPromptDialog && !showEmailAuthDialog) {
-      setTriggeredByCreateAccount(false);
-    }
-  }, [showSignInPromptDialog, showEmailAuthDialog]);
-
-
   const quickStartDisabled = isProcessingSessionAction || authLoading;
-  // "Create Account Session" button itself is not disabled by auth state now, only by ongoing session action or auth loading
   const createAccountButtonDisabled = isProcessingSessionAction || authLoading;
 
 
@@ -210,9 +143,9 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full max-w-6xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl"> {/* Adjusted max-w-4xl for 2 cards */}
           {/* Create Session Card */}
-          <Card className="shadow-lg lg:col-span-1">
+          <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><PlusCircle className="mr-2 h-6 w-6 text-primary" />Create New Session</CardTitle>
               <CardDescription>Start a feedback session.</CardDescription>
@@ -223,7 +156,7 @@ export default function HomePage() {
                 className="w-full text-lg py-6"
                 disabled={quickStartDisabled}
               >
-                {isProcessingSessionAction && !triggeredByCreateAccount ? 'Processing...' : 'Quick Start (Anonymous)'}
+                {isProcessingSessionAction ? 'Processing...' : 'Quick Start (Anonymous)'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
                 No account needed. Core features for immediate use.
@@ -232,19 +165,19 @@ export default function HomePage() {
                 onClick={handleCreateAccountSession}
                 className="w-full text-lg py-6"
                 variant="outline"
-                disabled={createAccountButtonDisabled}
+                disabled={createAccountButtonDisabled && !(user && !user.isAnonymous)} // Disable only if processing, not based on auth state here
               >
                 <UserCircle className="mr-2 h-5 w-5"/>
-                {(isProcessingSessionAction && triggeredByCreateAccount) ? 'Processing...' : 'Create Account Session'}
+                {(isProcessingSessionAction && (user && !user.isAnonymous)) ? 'Processing...' : 'Create Account Session'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                Links session to your account (future features). Sign-in required.
+                Links session to your account (future features). Sign-in/up required.
               </p>
             </CardContent>
           </Card>
 
           {/* Join Session Card */}
-          <Card className="shadow-lg lg:col-span-1">
+          <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><ArrowRight className="mr-2 h-6 w-6 text-primary" />Join Existing Session</CardTitle>
               <CardDescription>Enter a 6-digit code to join.</CardDescription>
@@ -267,162 +200,10 @@ export default function HomePage() {
               </Button>
             </CardContent>
           </Card>
-
-          {/* Manage Account Card */}
-          <Card className="shadow-lg lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="text-2xl flex items-center"><UserCircle className="mr-2 h-6 w-6 text-primary" />Manage Account</CardTitle>
-              {user && !user.isAnonymous ? (
-                <CardDescription>You are signed in as {user.displayName || user.email}.</CardDescription>
-              ) : user && user.isAnonymous ? (
-                <CardDescription>You are currently a Guest. Sign in/up for account features.</CardDescription>
-              ) : (
-                <CardDescription>Sign in or create an account.</CardDescription>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {(!user || user.isAnonymous) && (
-                <>
-                  <Button
-                    onClick={handleGoogleSignInAndPotentiallyCreateSession}
-                    className="w-full text-md py-3"
-                    disabled={isProcessingAuth || authLoading}
-                  >
-                    <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512"><path fill="currentColor" d="M488 261.8C488 403.3 381.5 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path></svg>
-                    {isProcessingAuth ? 'Processing...' : 'Sign In / Sign Up with Google'}
-                  </Button>
-                  <Button
-                    onClick={() => openEmailAuthDialogForAction('signIn', false)}
-                    className="w-full text-md py-3"
-                    variant="outline"
-                    disabled={isProcessingAuth || authLoading}
-                  >
-                    <Mail className="mr-2 h-5 w-5"/>
-                    Sign In / Sign Up with Email
-                  </Button>
-                </>
-              )}
-              {user && !user.isAnonymous && (
-                 <p className="text-sm text-center text-muted-foreground">
-                   Use the global header to sign out.
-                 </p>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
 
-      {/* Sign-In Prompt Dialog (for Create Account Session) */}
-      <Dialog open={showSignInPromptDialog} onOpenChange={(isOpen) => {
-          setShowSignInPromptDialog(isOpen);
-          if (!isOpen) setTriggeredByCreateAccount(false);
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-primary" />Sign-In Required</DialogTitle>
-            <DialogDescription>
-              To create an account-linked session, please sign in or sign up first.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <Button
-              onClick={handleGoogleSignInAndPotentiallyCreateSession}
-              className="w-full text-lg py-6"
-              disabled={isProcessingAuth}
-            >
-              <svg className="mr-2 h-5 w-5" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512"><path fill="currentColor" d="M488 261.8C488 403.3 381.5 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path></svg>
-              {isProcessingAuth ? 'Processing...' : 'Sign In / Sign Up with Google'}
-            </Button>
-            <Button
-              onClick={() => openEmailAuthDialogForAction('signIn', true)}
-              variant="outline"
-              className="w-full text-lg py-6"
-              disabled={isProcessingAuth}
-            >
-              <Mail className="mr-2 h-5 w-5"/>
-              Sign In / Sign Up with Email
-            </Button>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost">Cancel</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Email Authentication Dialog */}
-      <Dialog open={showEmailAuthDialog} onOpenChange={(isOpen) => {
-          setShowEmailAuthDialog(isOpen);
-          if (!isOpen) {
-            setTriggeredByCreateAccount(false);
-            setEmailInput(''); // Clear inputs on close
-            setPasswordInput('');
-          }
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center">
-                {emailAuthActionType === 'signUp' ? <UserPlus className="mr-2 h-6 w-6 text-primary"/> : <LogIn className="mr-2 h-6 w-6 text-primary"/>}
-                {emailAuthActionType === 'signUp' ? 'Sign Up with Email' : 'Sign In with Email'}
-            </DialogTitle>
-            <DialogDescription>
-              {emailAuthActionType === 'signUp' ? 'Create a new account.' : 'Sign in to your existing account.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <Input
-              type="email"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              placeholder="Enter your email"
-              className="text-lg h-12"
-              disabled={isProcessingAuth}
-            />
-            <Input
-              type="password"
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              placeholder="Enter your password"
-              className="text-lg h-12"
-              disabled={isProcessingAuth}
-            />
-          </div>
-          <DialogFooter className="sm:justify-between">
-            <DialogClose asChild>
-              <Button type="button" variant="ghost" disabled={isProcessingAuth}>Cancel</Button>
-            </DialogClose>
-            <div className="flex flex-col sm:flex-row gap-2 mt-2 sm:mt-0">
-                 <Button
-                    onClick={() => {
-                        setEmailAuthActionType('signUp'); // Explicitly set for clarity if user switches
-                        handleEmailAuthSubmit();
-                    }}
-                    variant={emailAuthActionType === 'signUp' ? 'default' : 'outline'}
-                    className="w-full sm:w-auto"
-                    disabled={isProcessingAuth || !emailInput || !passwordInput}
-                  >
-                    <UserPlus className="mr-2 h-5 w-5"/>
-                    {isProcessingAuth && emailAuthActionType === 'signUp' ? 'Processing...' : 'Sign Up'}
-                  </Button>
-                  <Button
-                     onClick={() => {
-                        setEmailAuthActionType('signIn'); // Explicitly set
-                        handleEmailAuthSubmit();
-                    }}
-                    variant={emailAuthActionType === 'signIn' ? 'default' : 'outline'}
-                    className="w-full sm:w-auto"
-                    disabled={isProcessingAuth || !emailInput || !passwordInput}
-                  >
-                    <LogIn className="mr-2 h-5 w-5"/>
-                    {isProcessingAuth && emailAuthActionType === 'signIn' ? 'Processing...' : 'Sign In'}
-                  </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <footer className="w-full text-center p-4 text-sm text-muted-foreground">
+      <footer className="w-full text-center p-4 text-sm text-muted-foreground mt-12">
         <div className="flex flex-col items-center space-y-1">
           <span>A</span>
           <Image
@@ -438,5 +219,3 @@ export default function HomePage() {
     </main>
   );
 }
-
-    
