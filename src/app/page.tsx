@@ -50,6 +50,7 @@ export default function HomePage() {
         presenterQueue: [],
         currentPresenterIndex: -1,
         currentPresenterName: "",
+        currentPresenterUid: null, // Ensure this is explicitly set to null
         presenterScores: [],
       });
       toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Redirecting...` });
