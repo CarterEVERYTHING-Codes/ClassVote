@@ -2,7 +2,7 @@
 
 # ClassVote
 
-ClassVote is a real-time, interactive web application where users create or join voting sessions to collectively provide feedback, typically for presentations. Participants must set a unique nickname for the session before they can engage. This nickname cannot be changed later. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, presenter queues, kick participants, and end sessions. An overall leaderboard displays scores for all presenters once the queue is complete or the session ends. Users can sign in with Google to (eventually) associate sessions and scores with their account.
+ClassVote is a real-time, interactive web application where users create or join voting sessions to collectively provide feedback, typically for presentations. Participants must set a unique nickname for the session before they can engage. This nickname cannot be changed later. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, presenter queues, kick participants, and end sessions. An overall leaderboard displays scores for all presenters once the queue is complete or the session ends. Users can sign in with Google to associate sessions and scores with their account.
 
 ## Tech Stack
 
@@ -47,7 +47,7 @@ ClassVote is a real-time, interactive web application where users create or join
         service cloud.firestore {
           match /databases/{database}/documents {
             match /sessions/{sessionId} {
-              allow read: if request.auth != null;
+              allow read: if request.auth != null; // Allows authenticated users to read for dashboard/my-results
 
               allow create: if request.auth != null &&
                                request.resource.data.adminUid == request.auth.uid &&
@@ -75,79 +75,109 @@ ClassVote is a real-time, interactive web application where users create or join
                                 request.resource.data.createdAt == resource.data.createdAt && 
                                 request.resource.data.sessionType == resource.data.sessionType &&
                                 (
-                                  // Participants map itself is not directly modified by these general admin actions (except kick)
-                                  // Note: All other fields must be explicitly checked for equality or allowed change.
-                                  ( // General admin actions not related to presenter queue or kicking
+                                  // Toggle Pause/Resume Feedback (only isRoundActive changes)
+                                  (
+                                    request.resource.data.isRoundActive != resource.data.isRoundActive &&
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRoundActive']) &&
+                                    // All other critical fields must remain unchanged for this specific action
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded && 
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
                                     request.resource.data.participants == resource.data.participants &&
                                     request.resource.data.presenterQueue == resource.data.presenterQueue &&
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                     request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                     request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                    request.resource.data.presenterScores == resource.data.presenterScores &&
+                                    request.resource.data.presenterScores == resource.data.presenterScores
+                                  ) ||
+                                  // End session (may add final presenter score)
+                                  (
+                                    request.resource.data.sessionEnded == true && resource.data.sessionEnded == false &&
+                                    request.resource.data.isRoundActive == false &&
                                     (
-                                      // Toggle Pause/Resume Feedback (only isRoundActive changes)
-                                      (
-                                        request.resource.data.isRoundActive != resource.data.isRoundActive &&
-                                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRoundActive']) &&
-                                        // All other critical fields must remain unchanged for this specific action
-                                        request.resource.data.likeClicks == resource.data.likeClicks &&
-                                        request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                        request.resource.data.sessionEnded == resource.data.sessionEnded && // Must not change sessionEnded status
-                                        request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                        request.resource.data.resultsVisible == resource.data.resultsVisible
-                                      ) ||
-                                      // End session (may add final presenter score)
-                                      (
-                                        request.resource.data.sessionEnded == true && resource.data.sessionEnded == false &&
-                                        request.resource.data.isRoundActive == false &&
+                                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) ||
                                         (
-                                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) ||
-                                            (
-                                                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive', 'presenterScores']) &&
-                                                request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                                request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && // Check last added score
-                                                (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null))
-                                            )
+                                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive', 'presenterScores']) &&
+                                            request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
+                                            (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null))
                                         )
-                                      ) ||
-                                      // Toggle soundsEnabled
-                                      (
-                                        request.resource.data.soundsEnabled != resource.data.soundsEnabled &&
-                                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soundsEnabled'])
-                                      ) ||
-                                      // Toggle resultsVisible
-                                      (
-                                        request.resource.data.resultsVisible != resource.data.resultsVisible &&
-                                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resultsVisible'])
-                                      )
-                                    )
+                                    ) &&
+                                    // Ensure other fields are not changed unexpectedly during session end
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                    request.resource.data.participants == resource.data.participants &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    (request.resource.data.currentPresenterName == resource.data.currentPresenterName || request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName) && // currentPresenterName might clear if no score added
+                                    (request.resource.data.currentPresenterUid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null))) // same for uid
+                                  ) ||
+                                  // Toggle soundsEnabled
+                                  (
+                                    request.resource.data.soundsEnabled != resource.data.soundsEnabled &&
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soundsEnabled']) &&
+                                    request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                    request.resource.data.participants == resource.data.participants &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
+                                    request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
+                                    request.resource.data.presenterScores == resource.data.presenterScores
+                                  ) ||
+                                  // Toggle resultsVisible
+                                  (
+                                    request.resource.data.resultsVisible != resource.data.resultsVisible &&
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resultsVisible']) &&
+                                    request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.participants == resource.data.participants &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
+                                    request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
+                                    request.resource.data.presenterScores == resource.data.presenterScores
                                   ) ||
                                   // Set/Update Presenter Queue (resets scores, presenterScores, current presenter details)
                                   (
                                     request.resource.data.presenterQueue is list &&
+                                    (request.resource.data.presenterQueue.size() == 0 || request.resource.data.presenterQueue[0] is map) && // Items are maps
+                                    (request.resource.data.presenterQueue.size() == 0 || request.resource.data.presenterQueue[0].name is string) && // name is string
+                                    // uid is optional string or null
+                                    (request.resource.data.presenterQueue.size() == 0 || !('uid' in request.resource.data.presenterQueue[0]) || request.resource.data.presenterQueue[0].uid is string || request.resource.data.presenterQueue[0].uid == null) &&
                                     request.resource.data.currentPresenterIndex is number && (request.resource.data.currentPresenterIndex == 0 || request.resource.data.currentPresenterIndex == -1) &&
                                     request.resource.data.currentPresenterName is string &&
                                     (request.resource.data.currentPresenterUid is string || request.resource.data.currentPresenterUid == null) &&
                                     request.resource.data.likeClicks == 0 &&
                                     request.resource.data.dislikeClicks == 0 &&
-                                    (request.resource.data.isRoundActive == (request.resource.data.presenterQueue.size() > 0)) && // Round active if queue has items
-                                    request.resource.data.presenterScores.size() == 0 && // presenterScores is reset
-                                    request.resource.data.sessionEnded == resource.data.sessionEnded && // Must not change sessionEnded status
+                                    (request.resource.data.isRoundActive == (request.resource.data.presenterQueue.size() > 0)) && 
+                                    request.resource.data.presenterScores.size() == 0 && 
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded && 
                                     request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                     request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                    request.resource.data.participants == resource.data.participants && // Participants map should not change
+                                    request.resource.data.participants == resource.data.participants && 
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                       'presenterQueue', 'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
                                       'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
                                     ])
                                   ) ||
-                                  // Advancing Presenter (to next valid or to "End of Queue")
+                                  // Advancing Presenter (to next valid OR to "End of Queue")
                                   (
-                                    request.resource.data.presenterQueue == resource.data.presenterQueue && // Queue itself must not change
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue && // Queue itself must not change during this op
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex + 1 && // Index must advance by 1
                                     request.resource.data.likeClicks == 0 && // Current scores must reset
                                     request.resource.data.dislikeClicks == 0 && // Current scores must reset
-                                    request.resource.data.sessionEnded == resource.data.sessionEnded && // Session not ending
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded && 
                                     request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                     request.resource.data.resultsVisible == resource.data.resultsVisible &&
                                     request.resource.data.participants == resource.data.participants &&
@@ -156,14 +186,18 @@ ClassVote is a real-time, interactive web application where users create or join
                                       (
                                         request.resource.data.currentPresenterIndex < request.resource.data.presenterQueue.size() &&
                                         request.resource.data.currentPresenterName == request.resource.data.presenterQueue[request.resource.data.currentPresenterIndex].name &&
-                                        (request.resource.data.currentPresenterUid == request.resource.data.presenterQueue[request.resource.data.currentPresenterIndex].uid || (request.resource.data.currentPresenterUid == null && request.resource.data.presenterQueue[request.resource.data.currentPresenterIndex].uid == null)) &&
+                                        (request.resource.data.currentPresenterUid == request.resource.data.presenterQueue[request.resource.data.currentPresenterIndex].uid || (request.resource.data.currentPresenterUid == null && (request.resource.data.presenterQueue[request.resource.data.currentPresenterIndex].uid == null || !('uid' in request.resource.data.presenterQueue[request.resource.data.currentPresenterIndex])) )) &&
                                         request.resource.data.isRoundActive == true &&
                                         (
                                           // Subcase 1.1: Score for previous presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && // Check last added score
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
                                             (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) &&
+                                            // Validate new score structure
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number &&
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number &&
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                               'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
                                               'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
@@ -181,16 +215,20 @@ ClassVote is a real-time, interactive web application where users create or join
                                       ) ||
                                       // Case 2: Advancing to "End of Queue"
                                       (
-                                        request.resource.data.currentPresenterIndex >= request.resource.data.presenterQueue.size() && // Index is at or beyond queue end
+                                        request.resource.data.currentPresenterIndex >= request.resource.data.presenterQueue.size() && 
                                         request.resource.data.currentPresenterName == "End of Queue" &&
-                                        request.resource.data.currentPresenterUid == null && // currentPresenterUid should be null for "End of Queue"
+                                        request.resource.data.currentPresenterUid == null && 
                                         request.resource.data.isRoundActive == false &&
                                         (
                                           // Subcase 2.1: Score for the actual last presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && // Check last added score for name
-                                            (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) && // Check last added score for UID
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
+                                            (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) &&
+                                            // Validate new score structure
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number &&
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number &&
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                               'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
                                               'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
@@ -211,8 +249,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                   // Admin kicking a participant
                                   (
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
-                                    (request.auth.uid in resource.data.participants ? request.auth.uid in request.resource.data.participants : true) && // Admin cannot kick self if present
-                                    request.resource.data.participants.keys().size() < resource.data.participants.keys().size() && // Ensure a participant is removed
+                                    (request.auth.uid in resource.data.participants ? request.auth.uid in request.resource.data.participants : true) && 
+                                    request.resource.data.participants.keys().size() < resource.data.participants.keys().size() && 
                                     request.resource.data.isRoundActive == resource.data.isRoundActive &&
                                     request.resource.data.likeClicks == resource.data.likeClicks &&
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
@@ -223,17 +261,17 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                     request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                     request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                    request.resource.data.presenterScores == resource.data.presenterScores // Kicking does not affect presenterScores
+                                    request.resource.data.presenterScores == resource.data.presenterScores 
                                   )
                                 )
                               ) ||
                               // User voting actions
                               (
-                                request.resource.data.isRoundActive == true && // Round must remain active
-                                resource.data.isRoundActive == true && // Round must have been active
+                                request.resource.data.isRoundActive == true && 
+                                resource.data.isRoundActive == true && 
                                 ( 
-                                  (resource.data.presenterQueue == null || resource.data.presenterQueue.size() == 0) || // General session OR
-                                  ( // Specific presenter is active
+                                  (resource.data.presenterQueue == null || resource.data.presenterQueue.size() == 0) || 
+                                  ( 
                                     resource.data.presenterQueue.size() > 0 &&
                                     resource.data.currentPresenterIndex >= 0 &&
                                     resource.data.currentPresenterIndex < resource.data.presenterQueue.size() &&
@@ -241,7 +279,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                     resource.data.currentPresenterName != "End of Queue"
                                   )
                                 ) &&
-                                ( // Only one counter can change by exactly 1
+                                ( 
                                   ( 
                                     request.resource.data.likeClicks == resource.data.likeClicks + 1 &&
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
@@ -253,7 +291,6 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dislikeClicks'])
                                   )
                                 ) &&
-                                // Ensure no other critical fields are changed by a vote
                                 request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.sessionEnded == resource.data.sessionEnded &&
                                 request.resource.data.createdAt == resource.data.createdAt &&
@@ -287,7 +324,6 @@ ClassVote is a real-time, interactive web application where users create or join
                                   (!(resource.data.participants is map) && request.resource.data.participants.keys().hasOnly([request.auth.uid])) ||
                                   (resource.data.participants is map && request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid]))
                                 ) &&
-                                // Ensure no other critical fields are changed
                                 request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.isRoundActive == resource.data.isRoundActive &&
                                 request.resource.data.likeClicks == resource.data.likeClicks &&
@@ -361,30 +397,30 @@ ClassVote is a real-time, interactive web application where users create or join
 *   Create new voting sessions with a unique 6-digit code (either anonymously or linked to a Google account).
 *   Join existing sessions using the code.
 *   **Mandatory Nicknames:** Users must enter a unique nickname (per session) before participating. Nicknames are immutable once set.
-*   Admin can optionally define a list of presenters for the session.
+*   Admin can optionally define a list of presenters for the session. Presenter names that match a participant's nickname will link the scores to that participant's account (UID).
 *   Admin can add current participants (with nicknames) to the presenter list textarea.
-*   Admin can advance through presenters ("Next Feedback Round"), resetting scores and feedback rounds for each. Scores for each presenter are recorded for an overall session leaderboard.
+*   Admin can advance through presenters ("Next Feedback Round"), resetting scores and feedback rounds for each. Scores for each presenter are recorded (with UID if matched) for an overall session leaderboard and for individual user result history.
 *   Current presenter's name (if any) is displayed to all participants.
 *   If no presenters are defined, feedback applies to the general session.
 *   Real-time "like" and "dislike" voting.
 *   Admin controls for vote sounds (on/off) and live results visibility (show/hide).
 *   Admin can kick participants from the session.
 *   Live leaderboard displaying current scores (admin can hide/reveal), adapts to general session or specific presenter.
-*   **Presenter Self-View:** A presenter can see their own scores even if general results are hidden by the admin.
-*   **Overall Session Leaderboard:** Displayed when the presenter queue is finished or the session ends, showing scores for all presenters in that session.
+*   **Presenter Self-View:** A presenter can see their own scores even if general results are hidden by the admin, if their UID is matched.
+*   **Overall Session Leaderboard:** Displayed when the presenter queue is finished or the session ends, showing scores for all presenters in that session. Sorts by likes.
 *   Admin controls to pause/resume feedback rounds and end sessions.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Authentication via Firebase (Anonymous, Google Sign-In, Email/Password).
 *   Informational tooltips for admin controls.
 *   **Participant Count Display:** Shows the current number of participants in the session.
-*   Global header with Login/Logout (to `/auth` page), Feedback link, Dashboard link (for logged-in users), and theme toggle.
+*   Global header with Login/Logout (to `/auth` page), Feedback link, Dashboard link (for logged-in users), My Results link (for logged-in users), and theme toggle.
 *   **Admin Dashboard (`/dashboard`):** Logged-in (non-anonymous) users can view a history of sessions they administered, including the overall presenter scores for each.
+*   **My Results Page (`/my-results`):** Logged-in (non-anonymous) users can view a history of their own presentation scores from past sessions where their name was matched to their account.
 
 ## Next Steps (Future Enhancements - Not Yet Implemented)
-*   **Student View of Past Scores:** Allow students to view their own scores from past presentations. This requires changes to the session data model to robustly link presenter scores to user UIDs.
-*   Save presenter scores to their permanent user profiles (for logged-in Google users).
+*   More granular privacy controls for viewing session results if needed (currently all authenticated users can read session details for the "My Results" page).
+*   More formal mechanism for "sending" or sharing results with presenters post-session beyond the "My Results" page.
 *   More detailed user profiles.
-*   More formal mechanism for "sending" or sharing results with presenters post-session.
 
     
 
@@ -392,5 +428,6 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
 
 

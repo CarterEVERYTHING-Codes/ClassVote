@@ -49,9 +49,14 @@ interface ParticipantData {
   uid: string; 
 }
 
+interface PresenterEntry {
+  name: string;
+  uid?: string | null; // UID of the participant if matched
+}
+
 interface PresenterScore {
   name: string;
-  uid?: string | null;
+  uid?: string | null; // UID of the participant if matched
   likes: number;
   dislikes: number;
   netScore: number;
@@ -67,10 +72,10 @@ interface SessionData {
   soundsEnabled: boolean;
   resultsVisible: boolean;
   participants: Record<string, ParticipantData>;
-  presenterQueue?: Array<{ name: string, uid?: string | null }>;
+  presenterQueue?: PresenterEntry[];
   currentPresenterIndex?: number;
   currentPresenterName?: string;
-  currentPresenterUid?: string | null;
+  currentPresenterUid?: string | null; // UID of the current presenter if matched
   sessionType?: string;
   presenterScores?: PresenterScore[];
 }
@@ -117,7 +122,8 @@ export default function SessionPage() {
         return;
     }
     
-    setIsLoadingSession(true);
+    // Not including presenterQueueInput in dependency array to prevent re-subscription on typing.
+    // Logic to pre-fill presenterQueueInput if empty is handled below.
     const sessionDocRef = doc(db, 'sessions', sessionId);
     const unsubscribeFirestore = onSnapshot(sessionDocRef, (docSnap) => {
       setIsLoadingSession(false);
@@ -125,8 +131,10 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
+        // Pre-fill admin's presenter queue input only if it's currently empty and there's a queue in data
+        // This prevents overwriting admin's edits.
         if (isCurrentUserAdmin && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
-           if (presenterQueueInput.trim() === '') { // Only set if admin input is empty, to avoid overwriting edits
+           if (presenterQueueInput.trim() === '') { 
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
            }
         }
@@ -134,7 +142,6 @@ export default function SessionPage() {
 
         if (data.sessionEnded) {
           setError("This session has ended.");
-          // No need to clear hasSubmittedNickname based on kicked status if session is over
         } else {
           setError(null);
         }
@@ -147,11 +154,8 @@ export default function SessionPage() {
 
         if (authUser && data.participants?.[authUser.uid]?.nickname) {
           setNicknameInput(data.participants[authUser.uid].nickname);
-          if(!hasSubmittedNickname) setHasSubmittedNickname(true); // Set if not already set
+          if(!hasSubmittedNickname) setHasSubmittedNickname(true); 
         } else if (authUser && !data.sessionEnded) {
-          // User is in session but has no nickname yet, or was removed - handled by above conditions or nickname form
-          // If they were removed (no longer in participants), the "Removed from session" toast handles it.
-          // If they are authUser but not in participants and session not ended, they need to set nickname.
           if (!data.participants?.[authUser.uid]) {
              setHasSubmittedNickname(false);
           }
@@ -170,7 +174,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin]); // Removed presenterQueueInput, hasSubmittedNickname
+  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname]);
 
 
   useEffect(() => {
@@ -362,9 +366,15 @@ export default function SessionPage() {
     handleAdminAction(
         async () => {
             const nameLines = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name.length > 0);
-            const newQueue: Array<{ name: string, uid?: string | null }> = nameLines.map(name => {
-                const participantEntry = Object.entries(sessionData?.participants || {}).find(([_, pData]) => pData.nickname === name);
-                return { name, uid: participantEntry ? participantEntry[0] : null };
+            
+            const participantNicknameToUidMap = new Map<string, string>();
+            Object.entries(sessionData?.participants || {}).forEach(([uid, pData]) => {
+                participantNicknameToUidMap.set(pData.nickname.toLowerCase(), uid);
+            });
+
+            const newQueue: PresenterEntry[] = nameLines.map(name => {
+                const matchedUid = participantNicknameToUidMap.get(name.toLowerCase());
+                return { name, uid: matchedUid || null };
             });
 
             const sessionDocRef = doc(db, 'sessions', sessionId);
@@ -410,7 +420,7 @@ export default function SessionPage() {
             
             const { 
                 currentPresenterName: currentPresenterNameFromState,
-                currentPresenterUid: currentPresenterUidFromState, 
+                currentPresenterUid: currentPresenterUidFromState, // Already using this from state
                 likeClicks: currentLikesFromState, 
                 dislikeClicks: currentDislikesFromState,
                 currentPresenterIndex: currentIndexFromState = -1,
@@ -424,6 +434,7 @@ export default function SessionPage() {
             }; 
             let scoreRecordedMessage = "";
             
+            // Record score for the current presenter if they are valid
             if (currentPresenterNameFromState && 
                 currentPresenterNameFromState !== "End of Queue" && 
                 currentIndexFromState >= 0 && 
@@ -439,9 +450,8 @@ export default function SessionPage() {
                 updatePayload.presenterScores = arrayUnion(scoreToRecord);
                 scoreRecordedMessage = `Scores for ${currentPresenterNameFromState} (Likes: ${currentLikesFromState}, Dislikes: ${currentDislikesFromState}) recorded.`;
             } else {
-                 updatePayload.presenterScores = currentPresenterScoresFromState; // Ensure scores array is part of payload even if no new score
+                 updatePayload.presenterScores = currentPresenterScoresFromState; 
             }
-
 
             const newIndex = currentIndexFromState + 1;
             updatePayload.currentPresenterIndex = newIndex;
@@ -449,11 +459,11 @@ export default function SessionPage() {
             if (newIndex >= currentQueueFromState.length) { 
                 updatePayload.isRoundActive = false;
                 updatePayload.currentPresenterName = "End of Queue";
-                updatePayload.currentPresenterUid = null;
+                updatePayload.currentPresenterUid = null; // Explicitly null
             } else { 
                 const nextPresenter = currentQueueFromState[newIndex];
                 updatePayload.currentPresenterName = nextPresenter.name;
-                updatePayload.currentPresenterUid = nextPresenter.uid || null;
+                updatePayload.currentPresenterUid = nextPresenter.uid || null; // Use UID from queue item
                 updatePayload.isRoundActive = true;
             }
             
@@ -472,7 +482,7 @@ export default function SessionPage() {
              if (scoreRecordedMessage) toastDescription += " Overall leaderboard updated.";
              toast({ title: toastTitle, description: toastDescription, variant: "default" });
         },
-        "", 
+        "", // Success message handled by the toast in the function
         "Could not advance to the next feedback round."
     );
 
@@ -685,7 +695,8 @@ export default function SessionPage() {
       sessionData?.currentPresenterName &&
       selfNickname &&
       sessionData.currentPresenterName === selfNickname &&
-      sessionData.currentPresenterName !== "End of Queue"
+      sessionData.currentPresenterName !== "End of Queue" &&
+      sessionData.currentPresenterUid === authUser.uid // Ensure UID match as well
   );
   
   const isOverallLeaderboardVisibleToUser = sessionData.resultsVisible || isCurrentUserAdmin;
@@ -835,7 +846,7 @@ export default function SessionPage() {
                                                 <ListChecks className="mr-2 h-5 w-5 text-primary" />Presenter List
                                                 <Tooltip>
                                                     <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-6 w-6"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Enter one presenter name per line. Click 'Set/Update' to apply. This will reset scores and start/manage the round for presenters. If the list is empty, the session operates in a general feedback mode.</p></TooltipContent>
+                                                    <TooltipContent><p>Enter one presenter name per line. Matched participant UIDs will be stored. Click 'Set/Update' to apply. This will reset scores and start/manage the round for presenters. If the list is empty, the session operates in a general feedback mode.</p></TooltipContent>
                                                 </Tooltip>
                                             </h3>
                                             <Textarea
@@ -1016,7 +1027,6 @@ export default function SessionPage() {
                 </Button>
             )}
             {(!isCurrentUserAdmin && (sessionData.sessionEnded || error)) && (
-                 // If session ended OR there's an error message like "session not found", show homepage button
                 <Button onClick={() => router.push('/')} variant="outline">
                     <Home className="mr-2 h-4 w-4" /> Go to Homepage
                 </Button>
@@ -1062,3 +1072,4 @@ export default function SessionPage() {
     </main>
   );
 }
+
