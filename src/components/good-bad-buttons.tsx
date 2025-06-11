@@ -12,10 +12,11 @@ import { doc, updateDoc, increment, getDoc, FirebaseError } from "firebase/fires
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
-  soundsEnabled: boolean; 
+  soundsEnabled: boolean;
+  roundId?: number; // To help distinguish between different active rounds/presenters
 }
 
-const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp, soundsEnabled }) => {
+const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp, soundsEnabled, roundId }) => {
   const { toast } = useToast();
   const likeSynth = useRef<Tone.Synth | null>(null);
   const dislikeSynth = useRef<Tone.Synth | null>(null);
@@ -23,18 +24,24 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   const [internalIsRoundActive, setInternalIsRoundActive] = useState(isRoundActiveProp);
   const [isLoadingClick, setIsLoadingClick] = useState(false);
   const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
-  const localStorageKey = `hasVoted_${sessionId}`;
+  const localStorageKey = `hasVoted_${sessionId}_${roundId ?? 'general'}`; // Make key specific to roundId
 
   useEffect(() => {
     setInternalIsRoundActive(isRoundActiveProp);
+
     if (isRoundActiveProp) {
-      const voted = localStorage.getItem(localStorageKey) === 'true';
-      setHasVotedInCurrentRound(voted);
+      // If the component is told the round is active for the current context (session + roundId),
+      // reset the voting ability.
+      // We use a round-specific localStorage key to track votes per round.
+      const votedInThisSpecificRound = localStorage.getItem(localStorageKey) === 'true';
+      setHasVotedInCurrentRound(votedInThisSpecificRound);
     } else {
-      localStorage.removeItem(localStorageKey);
+      // If the round is not active, ensure voting is disabled.
+      // We don't necessarily need to clear localStorage here, as the key is round-specific.
+      // However, if the round becomes inactive, the vote flag should be false.
       setHasVotedInCurrentRound(false);
     }
-  }, [isRoundActiveProp, localStorageKey]);
+  }, [isRoundActiveProp, roundId, sessionId, localStorageKey]);
 
 
   useEffect(() => {
@@ -76,7 +83,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       dislikeSynth.current?.dispose();
       dislikeSynth.current = null;
     };
-  }, []); // Empty dependency array means this runs once on mount
+  }, []);
 
   const ensureAudioContextStarted = async () => {
     if (Tone.context.state !== "running") {
@@ -103,15 +110,14 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       if (!currentSessionDoc.exists() || !currentSessionDoc.data()?.isRoundActive) {
         toast({ title: "Vote Not Counted", description: "The feedback round may have just closed or the session has ended.", variant: "default" });
         setInternalIsRoundActive(false); 
-        localStorage.removeItem(localStorageKey); 
-        setHasVotedInCurrentRound(false);
+        setHasVotedInCurrentRound(false); // Ensure UI reflects inability to vote
         return false;
       }
 
       await updateDoc(sessionDocRef, {
         [type === 'like' ? 'likeClicks' : 'dislikeClicks']: increment(1)
       });
-      localStorage.setItem(localStorageKey, 'true');
+      localStorage.setItem(localStorageKey, 'true'); // Mark as voted for this specific round
       setHasVotedInCurrentRound(true);
       return true;
     } catch (error) {
@@ -127,18 +133,15 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
           const isActive = currentSessionDoc.data()?.isRoundActive ?? false;
           setInternalIsRoundActive(isActive);
           if (!isActive) {
-            localStorage.removeItem(localStorageKey);
             setHasVotedInCurrentRound(false);
           }
         } else { 
           setInternalIsRoundActive(false);
-          localStorage.removeItem(localStorageKey);
           setHasVotedInCurrentRound(false);
         }
       } catch (docReadError) {
         console.error("Error re-reading session doc for state sync:", docReadError);
-         setInternalIsRoundActive(false); // Fallback if re-read fails
-         localStorage.removeItem(localStorageKey);
+         setInternalIsRoundActive(false); 
          setHasVotedInCurrentRound(false);
       }
       return false;

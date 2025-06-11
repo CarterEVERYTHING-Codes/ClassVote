@@ -8,6 +8,7 @@ interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
   soundsEnabled: boolean;
+  roundId?: number; // Added to identify the specific round/presenter
 }
 
 const GoodBadButtons = dynamic<GoodBadButtonsProps>(() => import('@/components/good-bad-buttons'), {

@@ -397,7 +397,6 @@ export default function SessionPage() {
                 isRoundActive: roundActive,
                 presenterScores: [], 
             });
-            if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
         },
         presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name.length > 0).length > 0
             ? "Presenter list updated. Scores reset. Round started for the first presenter. Overall leaderboard reset."
@@ -460,7 +459,6 @@ export default function SessionPage() {
             }
             
             await updateDoc(sessionDocRef, updatePayload);
-            if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
 
             let toastTitle = "Next Feedback Round";
             let toastDescription = `${scoreRecordedMessage}`;
@@ -754,6 +752,7 @@ export default function SessionPage() {
                     sessionId={sessionId}
                     isRoundActive={feedbackSubmissionAllowed}
                     soundsEnabled={sessionData.soundsEnabled}
+                    roundId={sessionData?.currentPresenterIndex ?? -1}
                 />
             </div>
         )}
