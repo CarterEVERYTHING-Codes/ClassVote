@@ -4,20 +4,28 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogIn, LogOut, UserCircle } from 'lucide-react';
+import { LogIn, LogOut, UserCircle, LifeBuoy } from 'lucide-react';
 import { ThemeToggleButton } from './theme-toggle-button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const Header: React.FC = () => {
   const { user, loading, signOut } = useAuth();
-  const router = useRouter(); // Initialize useRouter
+  const router = useRouter();
 
   const handleLoginSignUpClick = () => {
-    router.push('/auth'); // Navigate to the new /auth page
+    router.push('/auth');
   };
+
+  const feedbackFormUrl = "https://forms.office.com/Pages/ResponsePage.aspx?id=BLz2Ec8cMUi0vqcgjsi4-GqIj1C-TohGgk1iAQp1X5BUQkxXNlRLTktLNk9PV0dEVlVMN1M4VThGRC4u";
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -27,6 +35,25 @@ const Header: React.FC = () => {
           <span className="font-bold hidden sm:inline-block">ClassVote</span>
         </Link>
         <nav className="flex items-center space-x-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={() => window.open(feedbackFormUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <LifeBuoy className="h-[1.2rem] w-[1.2rem]" />
+                  <span className="sr-only">Feedback / Report Bug</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Feedback / Report Bug</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           {loading ? (
             <Skeleton className="h-8 w-24" />
           ) : user && !user.isAnonymous ? (
