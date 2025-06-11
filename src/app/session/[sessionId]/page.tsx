@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -410,54 +411,66 @@ export default function SessionPage() {
     handleAdminAction(
         async () => {
             if (!sessionData || !sessionData.presenterQueue || sessionData.presenterQueue.length === 0) {
-                toast({ title: "No Presenters", description: "Presenter list is empty.", variant: "default" });
+                toast({ title: "No Presenters Set", description: "The presenter list is empty. Please add presenters first.", variant: "default" });
                 return;
             }
             const sessionDocRef = doc(db, 'sessions', sessionId);
             
-            const currentPresenterName = sessionData.currentPresenterName;
-            const currentLikes = sessionData.likeClicks;
-            const currentDislikes = sessionData.dislikeClicks;
+            const { 
+                currentPresenterName: currentPresenterNameFromState, 
+                likeClicks: currentLikesFromState, 
+                dislikeClicks: currentDislikesFromState,
+                currentPresenterIndex: currentIndexFromState = -1, // Default to -1 if undefined
+                presenterQueue: currentQueueFromState = []
+            } = sessionData;
+
             let scoreRecordedMessage = "";
+            const updatePayload: any = {}; 
 
-            if (currentPresenterName && currentPresenterName !== "End of Queue" && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >=0) {
+            // Determine if a score needs to be recorded for the *current* presenter
+            if (currentPresenterNameFromState && 
+                currentPresenterNameFromState !== "End of Queue" && 
+                currentIndexFromState >= 0 && // Current presenter must be valid
+                currentIndexFromState < currentQueueFromState.length) {
+
                 const scoreToRecord: PresenterScore = {
-                    name: currentPresenterName,
-                    likes: currentLikes,
-                    dislikes: currentDislikes,
-                    netScore: currentLikes - currentDislikes,
+                    name: currentPresenterNameFromState,
+                    likes: currentLikesFromState,
+                    dislikes: currentDislikesFromState,
+                    netScore: currentLikesFromState - currentDislikesFromState,
                 };
-                await updateDoc(sessionDocRef, { presenterScores: arrayUnion(scoreToRecord) });
-                scoreRecordedMessage = `Scores for ${currentPresenterName} (Likes: ${currentLikes}, Dislikes: ${currentDislikes}) have been recorded.`;
+                updatePayload.presenterScores = arrayUnion(scoreToRecord);
+                scoreRecordedMessage = `Scores for ${currentPresenterNameFromState} (Likes: ${currentLikesFromState}, Dislikes: ${currentDislikesFromState}) recorded.`;
             }
 
-            const currentIndex = sessionData.currentPresenterIndex ?? -1;
-            const newIndex = currentIndex + 1;
+            const newIndex = currentIndexFromState + 1;
 
-            if (newIndex >= sessionData.presenterQueue.length) {
-                toast({ title: "End of Queue", description: `${scoreRecordedMessage} You have reached the end of the presenter list. Round closed.`, variant: "default" });
-                await updateDoc(doc(db, 'sessions', sessionId), { 
-                    isRoundActive: false, 
-                    currentPresenterName: "End of Queue", 
-                    likeClicks: 0, 
-                    dislikes: 0 
-                });
+            if (newIndex >= currentQueueFromState.length) { // Transition to End of Queue
+                updatePayload.isRoundActive = false;
+                updatePayload.currentPresenterName = "End of Queue";
+                updatePayload.likeClicks = 0;
+                updatePayload.dislikeClicks = 0;
+                // currentPresenterIndex can remain as the last valid index or be explicitly set.
+                // The "End of Queue" state is primarily identified by currentPresenterName.
+                // No change to currentPresenterIndex in this specific update to align with some rule interpretations.
+                
+                await updateDoc(sessionDocRef, updatePayload);
                 if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
-                return;
+                toast({ title: "End of Presenter Queue", description: `${scoreRecordedMessage} ${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Round closed. Overall leaderboard updated.`, variant: "default" });
+            
+            } else { // Transition to Next Presenter
+                updatePayload.currentPresenterIndex = newIndex;
+                updatePayload.currentPresenterName = currentQueueFromState[newIndex];
+                updatePayload.likeClicks = 0;
+                updatePayload.dislikeClicks = 0;
+                updatePayload.isRoundActive = true;
+
+                await updateDoc(sessionDocRef, updatePayload);
+                if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
+                toast({ title: "Next Presenter", description: `${scoreRecordedMessage} ${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex]}. Scores reset, round started. Overall leaderboard updated.`, variant: "default"});
             }
-
-            await updateDoc(sessionDocRef, {
-                currentPresenterIndex: newIndex,
-                currentPresenterName: sessionData.presenterQueue[newIndex],
-                likeClicks: 0,
-                dislikeClicks: 0,
-                isRoundActive: true,
-            });
-            if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
-            toast({ title: "Next Presenter", description: `${scoreRecordedMessage} Now presenting: ${sessionData.presenterQueue[newIndex]}. Scores reset and round started.`});
-
         },
-        "", // Success message handled within the async function with more detail
+        "", // Custom success toast messages are handled within the function
         "Could not advance to the next presenter."
     );
 
@@ -631,7 +644,8 @@ export default function SessionPage() {
   const isQueueAtEnd = !isPresenterQueueEffectivelyEmpty &&
                        sessionData.currentPresenterIndex !== undefined &&
                        sessionData.presenterQueue!.length > 0 &&
-                       sessionData.currentPresenterIndex >= sessionData.presenterQueue!.length -1;
+                       sessionData.currentPresenterIndex >= sessionData.presenterQueue!.length -1 &&
+                       sessionData.currentPresenterName !== "End of Queue"; // Ensure we are not already at End of Queue state
 
 
   let sessionStatusMessage = "";
@@ -655,8 +669,8 @@ export default function SessionPage() {
 
 
   const disableOpenCloseRoundButton = isProcessingAdminAction ||
-                                   (isSpecificPresenterActive && sessionData.currentPresenterName === "End of Queue") ||
-                                   (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== -1 && !isSpecificPresenterActive);
+                                   (isSpecificPresenterActive && sessionData.currentPresenterName === "End of Queue") || // Should be sessionData.currentPresenterName === "End of Queue"
+                                   (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== -1 && !isSpecificPresenterActive && sessionData.currentPresenterName !== "End of Queue"); // Corrected condition
 
   const disableClearScoresButton = isProcessingAdminAction ||
                                 (!sessionData.isRoundActive && !isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && !isPresenterQueueEffectivelyEmpty) ||
@@ -665,8 +679,10 @@ export default function SessionPage() {
 
   const nextPresenterButtonDisabled = isProcessingAdminAction ||
                                    isPresenterQueueEffectivelyEmpty ||
-                                   isQueueAtEnd ||
-                                   sessionData.currentPresenterIndex === -1;
+                                   isQueueAtEnd || // If it's at the end, it should allow one more click to reach "End of Queue" state.
+                                   sessionData.currentPresenterName === "End of Queue" || // If already at "End of Queue", disable.
+                                   sessionData.currentPresenterIndex === -1; // If queue is set but not started, it's disabled.
+
 
   const selfNickname = authUser ? sessionData?.participants?.[authUser.uid]?.nickname : undefined;
   const isSelfPresenter = !!(
@@ -1052,3 +1068,5 @@ export default function SessionPage() {
     </main>
   );
 }
+
+    

@@ -1,4 +1,5 @@
 
+
 # ClassVote
 
 ClassVote is a real-time, interactive web application where users create or join voting sessions to collectively provide feedback, typically for presentations. Participants must set a unique nickname for the session before they can engage. This nickname cannot be changed later. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, presenter queues, kick participants, and end sessions. An overall leaderboard displays scores for all presenters once the queue is complete or the session ends. Users can sign in with Google to (eventually) associate sessions and scores with their account.
@@ -76,9 +77,10 @@ ClassVote is a real-time, interactive web application where users create or join
                                   // Participants map itself is not directly modified by these general admin actions (except kick)
                                   (
                                     request.resource.data.participants == resource.data.participants &&
-                                    ( // Allow presenterScores to be reset or an item added by specific admin actions
+                                    ( // Allow presenterScores to be reset or an item added/unchanged by specific admin actions
                                       (request.resource.data.presenterScores.size() == 0 && request.resource.data.presenterQueue.size() >= 0) || // Resetting queue also resets scores
-                                      (request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 && request.resource.data.presenterScores[-1].name is string) // Adding a score
+                                      (request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 && request.resource.data.presenterScores[-1].name is string) || // Adding a score
+                                      (request.resource.data.presenterScores.size() == resource.data.presenterScores.size()) // Scores unchanged (e.g. if current presenter was empty)
                                     ) &&
                                     (
                                       // Toggle round (optionally resets scores)
@@ -150,16 +152,17 @@ ClassVote is a real-time, interactive web application where users create or join
                                         request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                         request.resource.data.resultsVisible == resource.data.resultsVisible
                                       ) ||
-                                      // Advance to Next Presenter (adds to presenterScores, resets current scores)
+                                      // Advance to Next Presenter (adds to presenterScores or not, resets current scores)
                                       (
-                                        request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                        request.resource.data.presenterQueue == resource.data.presenterQueue && // Queue itself doesn't change
                                         request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex + 1 &&
-                                        request.resource.data.currentPresenterName is string &&
+                                        request.resource.data.currentPresenterName == resource.data.presenterQueue[request.resource.data.currentPresenterIndex] && // Name matches new index in existing queue
                                         request.resource.data.likeClicks == 0 && 
                                         request.resource.data.dislikeClicks == 0 &&
                                         request.resource.data.isRoundActive == true &&
-                                        request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 && // One score added
-                                        request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                        // presenterScores might increase by 1 or stay the same
+                                        (request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 || request.resource.data.presenterScores.size() == resource.data.presenterScores.size()) &&
+                                        request.resource.data.sessionEnded == resource.data.sessionEnded && // Session not ending
                                         request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                         request.resource.data.resultsVisible == resource.data.resultsVisible
                                       ) ||
@@ -170,10 +173,10 @@ ClassVote is a real-time, interactive web application where users create or join
                                         request.resource.data.isRoundActive == false &&
                                         request.resource.data.likeClicks == 0 &&
                                         request.resource.data.dislikeClicks == 0 &&
-                                        request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
-                                        // presenterScores might have been updated by the last "next presenter"
+                                        request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && // Index might be last valid one or specific "end" marker
+                                        // presenterScores might have been updated by the last "next presenter" or stay same if already ended
                                         (request.resource.data.presenterScores.size() == resource.data.presenterScores.size() || request.resource.data.presenterScores.size() == resource.data.presenterScores.size() +1 ) &&
-                                        request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                        request.resource.data.sessionEnded == resource.data.sessionEnded && // Session not ending
                                         request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                         request.resource.data.resultsVisible == resource.data.resultsVisible
                                       )
@@ -200,8 +203,8 @@ ClassVote is a real-time, interactive web application where users create or join
                               // User voting actions
                               (
                                 resource.data.isRoundActive == true &&
-                                request.resource.data.isRoundActive == true && // Round is active and remains active
-                                ( // Presenter context must be valid or general session
+                                request.resource.data.isRoundActive == true && 
+                                ( 
                                   (resource.data.presenterQueue == null || resource.data.presenterQueue.size() == 0) ||
                                   (
                                     resource.data.presenterQueue.size() > 0 &&
@@ -212,25 +215,24 @@ ClassVote is a real-time, interactive web application where users create or join
                                   )
                                 ) &&
                                 (
-                                  ( // Voted like: likeClicks increased by 1, dislikeClicks unchanged
+                                  ( 
                                     request.resource.data.likeClicks == resource.data.likeClicks + 1 &&
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeClicks'])
                                   ) ||
-                                  ( // Voted dislike: dislikeClicks increased by 1, likeClicks unchanged
+                                  ( 
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks + 1 &&
                                     request.resource.data.likeClicks == resource.data.likeClicks &&
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dislikeClicks'])
                                   )
                                 ) &&
-                                // Ensure other critical fields are not changed by this specific voting action
                                 request.resource.data.adminUid == resource.data.adminUid &&
                                 request.resource.data.sessionEnded == resource.data.sessionEnded &&
                                 request.resource.data.createdAt == resource.data.createdAt &&
                                 request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                 request.resource.data.resultsVisible == resource.data.resultsVisible &&
                                 request.resource.data.sessionType == resource.data.sessionType &&
-                                request.resource.data.participants == resource.data.participants && // Participants map itself unchanged
+                                request.resource.data.participants == resource.data.participants && 
                                 request.resource.data.presenterQueue == resource.data.presenterQueue &&
                                 request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                 request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
@@ -244,15 +246,15 @@ ClassVote is a real-time, interactive web application where users create or join
                                 request.resource.data.participants[request.auth.uid].nickname is string &&
                                 request.resource.data.participants[request.auth.uid].uid == request.auth.uid &&
                                 (
-                                  (!(resource.data.participants is map) || (resource.data.participants is map && !(request.auth.uid in resource.data.participants))) && // User not in participants map yet
-                                  request.resource.data.participants[request.auth.uid].joinedAt == request.time // joinedAt is set on creation
+                                  (!(resource.data.participants is map) || (resource.data.participants is map && !(request.auth.uid in resource.data.participants))) && 
+                                  request.resource.data.participants[request.auth.uid].joinedAt == request.time 
                                 ) ||
                                 (
-                                  (resource.data.participants is map && request.auth.uid in resource.data.participants) && // User already in participants map
-                                  request.resource.data.participants[request.auth.uid].nickname == resource.data.participants[request.auth.uid].nickname && // Nickname is immutable
-                                  request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt // joinedAt is immutable
+                                  (resource.data.participants is map && request.auth.uid in resource.data.participants) && 
+                                  request.resource.data.participants[request.auth.uid].nickname == resource.data.participants[request.auth.uid].nickname && 
+                                  request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt 
                                 ) &&
-                                ( // Ensure only the user's own entry is being added/affected
+                                ( 
                                   (!(resource.data.participants is map) && request.resource.data.participants.keys().hasOnly([request.auth.uid])) ||
                                   (resource.data.participants is map && request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid]))
                                 ) &&
@@ -356,3 +358,6 @@ ClassVote is a real-time, interactive web application where users create or join
     
 
 
+
+
+    
