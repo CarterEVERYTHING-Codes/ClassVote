@@ -8,8 +8,16 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogIn, LogOut, UserCircle, LifeBuoy, BarChart3, Settings } from 'lucide-react'; // Added Settings
+import { LogIn, LogOut, UserCircle, LifeBuoy, BarChart3, Settings, ChevronDown } from 'lucide-react';
 import { ThemeToggleButton } from './theme-toggle-button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -56,46 +64,44 @@ const Header: React.FC = () => {
           </TooltipProvider>
 
           {loading ? (
-            <Skeleton className="h-9 w-24" /> 
+            <Skeleton className="h-9 w-28" /> 
           ) : user && !user.isAnonymous ? (
-            <>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={() => router.push('/results')} className="px-2 sm:px-3">
-                      <BarChart3 className="mr-1 h-4 w-4" /> 
-                      <span className="hidden sm:inline">Results</span>
-                      <span className="sm:hidden text-xs">Results</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View Session Results</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={() => router.push('/account')} className="px-2 sm:px-3">
-                      <Settings className="mr-1 h-4 w-4" /> 
-                      <span className="hidden sm:inline">Account</span>
-                      <span className="sm:hidden text-xs">Account</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Manage Your Account</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <span className="text-sm text-muted-foreground hidden md:inline ml-2">
-                {user.displayName || user.email || 'User'}
-              </span>
-              <Button variant="ghost" size="sm" onClick={signOut} className="px-2 sm:px-3">
-                <LogOut className="mr-1 h-4 w-4" /> 
-                <span className="hidden sm:inline">Logout</span>
-                <span className="sm:hidden text-xs">Logout</span>
-              </Button>
-            </>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="px-2 sm:px-3">
+                  <UserCircle className="mr-1 h-5 w-5" />
+                  <span className="hidden md:inline max-w-[100px] truncate">
+                    {user.displayName || user.email || 'Account'}
+                  </span>
+                   <span className="md:hidden text-xs">Menu</span>
+                  <ChevronDown className="ml-1 h-4 w-4 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {(user.displayName || user.email) && (
+                    <>
+                        <DropdownMenuLabel className="truncate">
+                            {user.displayName && <p className="font-medium">{user.displayName}</p>}
+                            <p className="text-xs text-muted-foreground font-normal">{user.email}</p>
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                    </>
+                )}
+                <DropdownMenuItem onClick={() => router.push('/results')}>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  <span>Results</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push('/account')}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Account Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={signOut} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : (
             <Button variant="outline" size="sm" onClick={handleLoginSignUpClick} className="px-2 sm:px-3">
               <UserCircle className="mr-1 h-4 w-4" /> 
