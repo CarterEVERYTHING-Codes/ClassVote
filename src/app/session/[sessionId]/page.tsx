@@ -34,7 +34,7 @@ import {
     AccordionTrigger,
   } from "@/components/ui/accordion";
 import {
-    Play, Pause, RotateCcw, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
+    Play, Pause, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
     ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,7 +51,7 @@ interface ParticipantData {
 
 interface PresenterScore {
   name: string;
-  uid?: string | null; // For future linking, changed to string | null
+  uid?: string | null;
   likes: number;
   dislikes: number;
   netScore: number;
@@ -67,10 +67,10 @@ interface SessionData {
   soundsEnabled: boolean;
   resultsVisible: boolean;
   participants: Record<string, ParticipantData>;
-  presenterQueue?: Array<{ name: string, uid?: string | null }>; // Modified for potential UID
+  presenterQueue?: Array<{ name: string, uid?: string | null }>;
   currentPresenterIndex?: number;
   currentPresenterName?: string;
-  currentPresenterUid?: string | null; // Changed to string | null
+  currentPresenterUid?: string | null;
   sessionType?: string;
   presenterScores?: PresenterScore[];
 }
@@ -126,8 +126,6 @@ export default function SessionPage() {
         setSessionData(data);
 
         if (data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded && isCurrentUserAdmin) {
-           // Only set presenterQueueInput from Firestore if it's currently empty client-side
-           // This prevents overwriting user edits in the textarea during other state updates
            if (presenterQueueInput.trim() === '') {
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
            }
@@ -171,7 +169,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, hasSubmittedNickname, isCurrentUserAdmin]); // Removed presenterQueueInput
+  }, [sessionId, router, toast, authUser, authLoading, hasSubmittedNickname, isCurrentUserAdmin]); 
 
 
   useEffect(() => {
@@ -267,35 +265,16 @@ export default function SessionPage() {
     }
   };
 
-  const handleToggleRound = () =>
+  const handleTogglePauseResumeFeedback = () =>
     handleAdminAction(
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
-        const updateData: { isRoundActive: boolean; likeClicks?: number; dislikeClicks?: number } = {
-             isRoundActive: !sessionData!.isRoundActive
-        };
-
-        if (!sessionData!.isRoundActive && (isPresenterQueueEffectivelyEmpty || sessionData!.currentPresenterIndex === -1)) {
-            updateData.likeClicks = 0;
-            updateData.dislikeClicks = 0;
-             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
-        }
-        await updateDoc(sessionDocRef, updateData);
-        if (!sessionData!.isRoundActive && typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
+        await updateDoc(sessionDocRef, { isRoundActive: !sessionData!.isRoundActive });
+        // No score reset here. localStorage `hasVoted` is managed by GoodBadButtons based on isRoundActive prop
+        // and by Next Feedback Round which clears it.
       },
-      `Feedback round is now ${!sessionData!.isRoundActive ? 'OPEN' : 'CLOSED'}.`,
+      `Feedback round is now ${!sessionData!.isRoundActive ? 'RESUMED (OPEN)' : 'PAUSED (CLOSED)'}.`,
       "Could not update feedback round status."
-    );
-
-  const handleClearScores = () =>
-    handleAdminAction(
-      async () => {
-        const sessionDocRef = doc(db, 'sessions', sessionId);
-        await updateDoc(sessionDocRef, { likeClicks: 0, dislikeClicks: 0 });
-        if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
-      },
-      "Scores cleared and player votes reset.",
-      "Could not clear scores."
     );
 
   const handleToggleSounds = () =>
@@ -421,7 +400,7 @@ export default function SessionPage() {
         "Could not update presenter list."
     );
 
-  const handleNextPresenter = () =>
+  const handleNextPresenter = () => // Renamed to handleNextFeedbackRound in JSX, function name kept for now
     handleAdminAction(
         async () => {
             if (!sessionData || !sessionData.presenterQueue || sessionData.presenterQueue.length === 0) {
@@ -437,7 +416,6 @@ export default function SessionPage() {
                 dislikeClicks: currentDislikesFromState,
                 currentPresenterIndex: currentIndexFromState = -1,
                 presenterQueue: currentQueueFromState = [],
-                presenterScores: currentPresenterScoresFromState = []
             } = sessionData;
 
             const updatePayload: any = {
@@ -479,20 +457,20 @@ export default function SessionPage() {
             await updateDoc(sessionDocRef, updatePayload);
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
 
-            let toastTitle = "Next Presenter";
+            let toastTitle = "Next Feedback Round";
             let toastDescription = `${scoreRecordedMessage}`;
 
             if (newIndex >= currentQueueFromState.length) {
                  toastTitle = "End of Presenter Queue";
-                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Round closed.`;
+                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Feedback round closed.`;
             } else {
-                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, round started.`;
+                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, feedback round started.`;
             }
              toastDescription += " Overall leaderboard updated.";
              toast({ title: toastTitle, description: toastDescription, variant: "default" });
         },
         "", 
-        "Could not advance to the next presenter."
+        "Could not advance to the next feedback round."
     );
 
   const triggerKickParticipantDialog = (uid: string, nickname: string) => {
@@ -675,7 +653,7 @@ export default function SessionPage() {
 
   if (isSpecificPresenterActive) {
       presenterDisplayMessage = `Now Presenting: ${sessionData.currentPresenterName}`;
-      sessionStatusMessage = sessionData.isRoundActive ? "Feedback round is OPEN for the current presenter. Cast your vote!" : "Feedback round is CLOSED for the current presenter.";
+      sessionStatusMessage = sessionData.isRoundActive ? "Feedback round is OPEN for the current presenter. Cast your vote!" : "Feedback round is PAUSED for the current presenter.";
   } else if (sessionData.currentPresenterName === "End of Queue") {
       presenterDisplayMessage = "Presenter queue finished.";
       sessionStatusMessage = "Feedback round is CLOSED.";
@@ -686,20 +664,13 @@ export default function SessionPage() {
           (sessionData.isRoundActive ? "General feedback round is OPEN." : "Waiting for admin to start presentations or open a general round.");
   } else { 
       presenterDisplayMessage = isCurrentUserAdmin ? "No presenter list. Run a general feedback round or add presenters." : "General feedback session.";
-      sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is CLOSED.";
+      sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is PAUSED.";
   }
 
 
-  const disableOpenCloseRoundButton = isProcessingAdminAction ||
-                                   (isSpecificPresenterActive && sessionData.currentPresenterName === "End of Queue") || 
-                                   (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex !== -1 && !isSpecificPresenterActive && sessionData.currentPresenterName !== "End of Queue"); 
+  const disablePauseResumeButton = isProcessingAdminAction || (sessionData.currentPresenterName === "End of Queue");
 
-  const disableClearScoresButton = isProcessingAdminAction ||
-                                (!sessionData.isRoundActive && !isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && !isPresenterQueueEffectivelyEmpty) ||
-                                (!sessionData.isRoundActive && isPresenterQueueEffectivelyEmpty) ||
-                                (sessionData.currentPresenterName === "End of Queue");
-
-  const nextPresenterButtonDisabled = isProcessingAdminAction ||
+  const nextFeedbackRoundButtonDisabled = isProcessingAdminAction ||
                                    isPresenterQueueEffectivelyEmpty ||
                                    sessionData.currentPresenterName === "End of Queue" || 
                                    (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length === 0) || 
@@ -900,14 +871,14 @@ export default function SessionPage() {
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <Button
-                                                            onClick={handleNextPresenter}
+                                                            onClick={handleNextPresenter} // Function name can remain handleNextPresenter
                                                             className="w-full sm:w-auto text-sm"
-                                                            disabled={nextPresenterButtonDisabled}
+                                                            disabled={nextFeedbackRoundButtonDisabled}
                                                         >
-                                                            Next Presenter <ChevronsRight className="ml-1 h-4 w-4"/>
+                                                            Next Feedback Round <ChevronsRight className="ml-1 h-4 w-4"/>
                                                         </Button>
                                                     </TooltipTrigger>
-                                                    <TooltipContent><p>Advance to the next presenter. Scores reset, round opens.</p></TooltipContent>
+                                                    <TooltipContent><p>Advance to the next feedback round (presenter). Scores reset, round opens.</p></TooltipContent>
                                                 </Tooltip>
                                             </div>
                                             {!isPresenterQueueEffectivelyEmpty && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && (
@@ -918,45 +889,31 @@ export default function SessionPage() {
                                         </div>
 
                                         <div className="space-y-3 border p-3 rounded-md bg-muted/20 dark:bg-muted/30">
-                                            <h3 className="text-md font-semibold">General Round & Score Controls</h3>
+                                            <h3 className="text-md font-semibold">General Feedback Controls</h3>
                                              <div className="text-xs text-center font-medium">
                                                 Feedback Round Status: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>
-                                                    {sessionData.isRoundActive ? 'OPEN' : 'CLOSED'}
+                                                    {sessionData.isRoundActive ? 'OPEN' : 'PAUSED'}
                                                 </span>
                                                 {!isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.isRoundActive && sessionData.currentPresenterIndex === -1 && (
                                                     <span className="text-xs text-orange-500"> (General - Queue set, not started)</span>
-                                                )}
+                                                 )}
                                                  {isPresenterQueueEffectivelyEmpty && sessionData.isRoundActive && (
                                                     <span className="text-xs text-green-600"> (General Session)</span>
                                                  )}
                                             </div>
                                             <div className="flex items-center">
                                                 <Button
-                                                    onClick={handleToggleRound}
+                                                    onClick={handleTogglePauseResumeFeedback}
                                                     variant="outline"
                                                     className="w-full text-sm"
-                                                    disabled={disableOpenCloseRoundButton}
+                                                    disabled={disablePauseResumeButton}
                                                 >
                                                 {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                                                {sessionData.isRoundActive ? 'Close Feedback Round' : 'Open Feedback Round'}
+                                                {sessionData.isRoundActive ? 'Pause Feedback' : 'Resume Feedback'}
                                                 </Button>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Open or close the feedback round. If presenters are set and active, applies to current presenter. If queue is set but not started, or if queue is empty, applies as a general round. Closing resets participant vote status.</p></TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                            <div className="flex items-center">
-                                                <Button
-                                                    onClick={handleClearScores}
-                                                    variant="outline"
-                                                    className="w-full text-sm"
-                                                    disabled={disableClearScoresButton}
-                                                >
-                                                <RotateCcw className="mr-2 h-4 w-4" /> Clear Scores & Reset Votes
-                                                </Button>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Reset Like/Dislike scores to zero and clear participant vote status. Applies to current context (presenter or general round).</p></TooltipContent>
+                                                    <TooltipContent><p>Pause or resume the current feedback round. Does not reset scores.</p></TooltipContent>
                                                 </Tooltip>
                                             </div>
                                         </div>
