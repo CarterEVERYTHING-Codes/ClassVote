@@ -125,8 +125,8 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
-        if (data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded && isCurrentUserAdmin) {
-           if (presenterQueueInput.trim() === '') {
+        if (isCurrentUserAdmin && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
+           if (presenterQueueInput.trim() === '') { // Only set if admin input is empty, to avoid overwriting edits
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
            }
         }
@@ -134,11 +134,7 @@ export default function SessionPage() {
 
         if (data.sessionEnded) {
           setError("This session has ended.");
-          if (authUser && !data.participants?.[authUser.uid] && hasSubmittedNickname) {
-            // User was likely kicked
-          } else if (!authUser || !data.participants?.[authUser.uid]) {
-            setHasSubmittedNickname(false); 
-          }
+          // No need to clear hasSubmittedNickname based on kicked status if session is over
         } else {
           setError(null);
         }
@@ -151,9 +147,14 @@ export default function SessionPage() {
 
         if (authUser && data.participants?.[authUser.uid]?.nickname) {
           setNicknameInput(data.participants[authUser.uid].nickname);
-          setHasSubmittedNickname(true);
+          if(!hasSubmittedNickname) setHasSubmittedNickname(true); // Set if not already set
         } else if (authUser && !data.sessionEnded) {
-          setHasSubmittedNickname(false); 
+          // User is in session but has no nickname yet, or was removed - handled by above conditions or nickname form
+          // If they were removed (no longer in participants), the "Removed from session" toast handles it.
+          // If they are authUser but not in participants and session not ended, they need to set nickname.
+          if (!data.participants?.[authUser.uid]) {
+             setHasSubmittedNickname(false);
+          }
         }
 
       } else {
@@ -169,7 +170,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, hasSubmittedNickname, isCurrentUserAdmin]); 
+  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin]); // Removed presenterQueueInput, hasSubmittedNickname
 
 
   useEffect(() => {
@@ -270,8 +271,6 @@ export default function SessionPage() {
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         await updateDoc(sessionDocRef, { isRoundActive: !sessionData!.isRoundActive });
-        // No score reset here. localStorage `hasVoted` is managed by GoodBadButtons based on isRoundActive prop
-        // and by Next Feedback Round which clears it.
       },
       `Feedback round is now ${!sessionData!.isRoundActive ? 'RESUMED (OPEN)' : 'PAUSED (CLOSED)'}.`,
       "Could not update feedback round status."
@@ -400,7 +399,7 @@ export default function SessionPage() {
         "Could not update presenter list."
     );
 
-  const handleNextPresenter = () => // Renamed to handleNextFeedbackRound in JSX, function name kept for now
+  const handleNextPresenter = () =>
     handleAdminAction(
         async () => {
             if (!sessionData || !sessionData.presenterQueue || sessionData.presenterQueue.length === 0) {
@@ -416,6 +415,7 @@ export default function SessionPage() {
                 dislikeClicks: currentDislikesFromState,
                 currentPresenterIndex: currentIndexFromState = -1,
                 presenterQueue: currentQueueFromState = [],
+                presenterScores: currentPresenterScoresFromState = [],
             } = sessionData;
 
             const updatePayload: any = {
@@ -438,7 +438,10 @@ export default function SessionPage() {
                 };
                 updatePayload.presenterScores = arrayUnion(scoreToRecord);
                 scoreRecordedMessage = `Scores for ${currentPresenterNameFromState} (Likes: ${currentLikesFromState}, Dislikes: ${currentDislikesFromState}) recorded.`;
+            } else {
+                 updatePayload.presenterScores = currentPresenterScoresFromState; // Ensure scores array is part of payload even if no new score
             }
+
 
             const newIndex = currentIndexFromState + 1;
             updatePayload.currentPresenterIndex = newIndex;
@@ -466,7 +469,7 @@ export default function SessionPage() {
             } else {
                  toastDescription += `${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, feedback round started.`;
             }
-             toastDescription += " Overall leaderboard updated.";
+             if (scoreRecordedMessage) toastDescription += " Overall leaderboard updated.";
              toast({ title: toastTitle, description: toastDescription, variant: "default" });
         },
         "", 
@@ -668,13 +671,13 @@ export default function SessionPage() {
   }
 
 
-  const disablePauseResumeButton = isProcessingAdminAction || (sessionData.currentPresenterName === "End of Queue");
+  const disablePauseResumeButton = isProcessingAdminAction || (sessionData.currentPresenterName === "End of Queue" && !sessionData.isRoundActive);
 
   const nextFeedbackRoundButtonDisabled = isProcessingAdminAction ||
                                    isPresenterQueueEffectivelyEmpty ||
                                    sessionData.currentPresenterName === "End of Queue" || 
                                    (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length === 0) || 
-                                   (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && !sessionData.isRoundActive && !isCurrentUserAdmin); 
+                                   (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && !sessionData.isRoundActive && !isCurrentUserAdmin && !sessionData.sessionEnded); 
 
   const selfNickname = authUser ? sessionData?.participants?.[authUser.uid]?.nickname : undefined;
   const isSelfPresenter = !!(
@@ -685,8 +688,18 @@ export default function SessionPage() {
       sessionData.currentPresenterName !== "End of Queue"
   );
   
-  const showOverallLeaderboard = (sessionData.currentPresenterName === "End of Queue" || sessionData.sessionEnded) && 
-                                 sessionData.presenterScores && sessionData.presenterScores.length > 0;
+  const isOverallLeaderboardVisibleToUser = sessionData.resultsVisible || isCurrentUserAdmin;
+  const showLiveOverallLeaderboard =
+    sessionData &&
+    sessionData.presenterScores &&
+    sessionData.presenterScores.length > 0 &&
+    !sessionData.sessionEnded && 
+    isOverallLeaderboardVisibleToUser;
+  
+  const showFinalOverallLeaderboard = 
+    sessionData.sessionEnded &&
+    sessionData.presenterScores && 
+    sessionData.presenterScores.length > 0;
 
 
   return (
@@ -747,8 +760,7 @@ export default function SessionPage() {
         )}>
 
             <section className={cn(
-                "space-y-4",
-                isCurrentUserAdmin ? "md:col-span-7" : "md:col-span-7" 
+                "space-y-4 md:col-span-7" 
             )}>
                 <Leaderboard
                     sessionId={sessionId}
@@ -757,14 +769,16 @@ export default function SessionPage() {
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                     isCurrentPresenterSelf={isSelfPresenter}
                 />
-                 {showOverallLeaderboard && (
+                 {showLiveOverallLeaderboard && (
                     <OverallLeaderboard presenterScores={sessionData.presenterScores!} />
                 )}
+                 {showFinalOverallLeaderboard && (
+                    <OverallLeaderboard presenterScores={sessionData.presenterScores!} />
+                 )}
             </section>
 
             <section className={cn(
-                "space-y-4",
-                 isCurrentUserAdmin ? "md:col-span-5" : "md:col-span-5" 
+                "space-y-4 md:col-span-5" 
             )}>
                  {(participantList.length > 0 ) && (
                     <Card className="w-full shadow-lg">
@@ -871,7 +885,7 @@ export default function SessionPage() {
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <Button
-                                                            onClick={handleNextPresenter} // Function name can remain handleNextPresenter
+                                                            onClick={handleNextPresenter} 
                                                             className="w-full sm:w-auto text-sm"
                                                             disabled={nextFeedbackRoundButtonDisabled}
                                                         >
@@ -909,7 +923,7 @@ export default function SessionPage() {
                                                     disabled={disablePauseResumeButton}
                                                 >
                                                 {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                                                {sessionData.isRoundActive ? 'Pause Feedback' : 'Resume Feedback'}
+                                                {sessionData.isRoundActive ? 'Pause Student Feedback' : 'Resume Student Feedback'}
                                                 </Button>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
@@ -990,7 +1004,7 @@ export default function SessionPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="text-center">
-                        <p className="text-muted-foreground mb-4">This session has been ended.</p>
+                        <p className="text-muted-foreground mb-4">This session has been ended. Final scores are shown above.</p>
                         <Button onClick={() => router.push('/')} variant="outline"> Go to Homepage </Button>
                     </CardContent>
                 </Card>
@@ -1002,6 +1016,7 @@ export default function SessionPage() {
                 </Button>
             )}
             {(!isCurrentUserAdmin && (sessionData.sessionEnded || error)) && (
+                 // If session ended OR there's an error message like "session not found", show homepage button
                 <Button onClick={() => router.push('/')} variant="outline">
                     <Home className="mr-2 h-4 w-4" /> Go to Homepage
                 </Button>
@@ -1014,6 +1029,7 @@ export default function SessionPage() {
                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                 <AlertDialogDescription>
                     This action will permanently end the session for all participants. This cannot be undone.
+                    If there is an active presenter, their final scores will be recorded.
                 </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
