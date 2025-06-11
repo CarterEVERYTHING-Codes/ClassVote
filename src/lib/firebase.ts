@@ -7,7 +7,9 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
-  signOut as firebaseSignOut // Renamed to avoid conflict if 'signOut' is used elsewhere
+  signOut as firebaseSignOut, // Renamed to avoid conflict if 'signOut' is used elsewhere
+  createUserWithEmailAndPassword, // Added for email/password auth
+  signInWithEmailAndPassword // Added for email/password auth
 } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 
@@ -61,5 +63,7 @@ export {
   signInWithPopup, 
   firebaseSignOut, 
   signInAnonymously,
-  onAuthStateChanged 
+  onAuthStateChanged,
+  createUserWithEmailAndPassword, // Exported
+  signInWithEmailAndPassword // Exported
 };

@@ -11,17 +11,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowRight, PlusCircle, UserCircle } from 'lucide-react';
+import { ArrowRight, PlusCircle, UserCircle, Mail, KeyRound, LogIn, UserPlus } from 'lucide-react';
 import type { User as FirebaseUser } from 'firebase/auth';
 
 export default function HomePage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { user, loading: authLoading, ensureAnonymousSignIn, signInWithGoogle } = useAuth(); 
+  const { user, loading: authLoading, ensureAnonymousSignIn, signInWithGoogle, signUpWithEmail, signInWithEmail } = useAuth(); 
 
   const [joinCode, setJoinCode] = useState('');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isProcessingEmailAuth, setIsProcessingEmailAuth] = useState(false);
+
 
   const generateSessionCode = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -34,23 +39,22 @@ export default function HomePage() {
 
     if (isAccountSession) {
       if (!activeUser || activeUser.isAnonymous) {
-        toast({ title: "Google Sign-In Required", description: "Cannot create account-linked session without a successful Google Sign-In.", variant: "destructive" });
+        toast({ title: "Sign-In Required", description: "Cannot create account-linked session without signing in first.", variant: "destructive" });
         setIsCreatingSession(false);
         return;
       }
-    } else { // Quick session
-      if (!activeUser) { // If no user at all (not even anonymous yet)
-        activeUser = await ensureAnonymousSignIn(); // Attempt to get an anonymous user
+    } else { 
+      if (!activeUser) { 
+        activeUser = await ensureAnonymousSignIn(); 
         if (!activeUser) {
           toast({ title: "Session Start Failed", description: "Could not start an anonymous session. Please try again.", variant: "destructive" });
           setIsCreatingSession(false);
           return;
         }
       }
-      // For a quick session, activeUser can be anonymous or a Google user.
     }
     
-    if (!activeUser) { // Should be unreachable if logic above is correct
+    if (!activeUser) { 
         toast({ title: "Authentication Error", description: "Fatal: Could not determine user for session creation.", variant: "destructive"});
         setIsCreatingSession(false);
         return;
@@ -87,30 +91,16 @@ export default function HomePage() {
   const handleCreateQuickSession = () => createSession(false);
 
   const handleCreateAccountSession = async () => {
-    // If user is already signed in with Google, proceed directly.
     if (user && !user.isAnonymous) {
       createSession(true, user);
       return;
     }
 
-    // If user is anonymous or null, prompt for Google Sign-In first.
     toast({ 
-      title: "Google Sign-In Required", 
-      description: "Creating an account-linked session requires Google Sign-In. Proceeding to sign you in...",
+      title: "Sign-In Required", 
+      description: "Creating an account-linked session requires signing in. Please sign in with Google or Email first.",
       variant: "default" 
     });
-    const signedInGoogleUser = await signInWithGoogle(); // This is from useAuth()
-
-    if (signedInGoogleUser && !signedInGoogleUser.isAnonymous) {
-      // Successfully signed in with Google. Now, create the session.
-      createSession(true, signedInGoogleUser);
-    } else {
-      // signInWithGoogle would have shown its own error toast if it failed or was cancelled.
-      // If it returned null or an anonymous user (which shouldn't happen for Google Sign-In),
-      // we don't proceed to create the session.
-      // An additional toast here could be redundant if signInWithGoogle already handled it.
-      // console.log("Google Sign-In did not result in a non-anonymous user, or was cancelled.");
-    }
   };
 
 
@@ -148,9 +138,29 @@ export default function HomePage() {
     setIsJoining(false);
   };
 
+  const handleSignUpWithEmail = async () => {
+    if (!emailInput || !passwordInput) {
+      toast({ title: "Missing Fields", description: "Please enter both email and password.", variant: "destructive" });
+      return;
+    }
+    setIsProcessingEmailAuth(true);
+    await signUpWithEmail(emailInput, passwordInput);
+    setIsProcessingEmailAuth(false);
+  };
+
+  const handleSignInWithEmail = async () => {
+    if (!emailInput || !passwordInput) {
+      toast({ title: "Missing Fields", description: "Please enter both email and password.", variant: "destructive" });
+      return;
+    }
+    setIsProcessingEmailAuth(true);
+    await signInWithEmail(emailInput, passwordInput);
+    setIsProcessingEmailAuth(false);
+  };
+
   const createQuickButtonDisabled = isCreatingSession || authLoading;
-  // Disable account button if already creating, auth is loading, OR if user is signed in but not with Google (which is handled by the function now)
-  const createAccountButtonDisabled = isCreatingSession || authLoading;
+  const createAccountButtonDisabled = isCreatingSession || authLoading || !(user && !user.isAnonymous);
+  const emailAuthDisabled = isProcessingEmailAuth || authLoading;
 
 
   return (
@@ -171,8 +181,8 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
-          <Card className="shadow-lg">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full max-w-6xl">
+          <Card className="shadow-lg lg:col-span-1">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><PlusCircle className="mr-2 h-6 w-6 text-primary" />Create New Session</CardTitle>
               <CardDescription>Start a feedback session for presentations.</CardDescription>
@@ -183,7 +193,7 @@ export default function HomePage() {
                 className="w-full text-lg py-6"
                 disabled={createQuickButtonDisabled}
               >
-                {isCreatingSession ? 'Creating...' : 'Quick Start (Anonymous)'}
+                {isCreatingSession && !createAccountButtonDisabled ? 'Creating...' : 'Quick Start (Anonymous)'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
                 No account needed. Core features for immediate use.
@@ -195,15 +205,15 @@ export default function HomePage() {
                 disabled={createAccountButtonDisabled}
               >
                 <UserCircle className="mr-2 h-5 w-5"/> 
-                {isCreatingSession ? 'Processing...' : (user && !user.isAnonymous ? 'Create Account Session' : 'Sign in for Account Session')}
+                {(isCreatingSession && createAccountButtonDisabled) ? 'Processing...' : 'Create Account Session'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                Sign in with Google to link sessions to your account (future features).
+                Requires sign-in. Links sessions to your account (future features).
               </p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-lg">
+          <Card className="shadow-lg lg:col-span-1">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><ArrowRight className="mr-2 h-6 w-6 text-primary" />Join Existing Session</CardTitle>
               <CardDescription>Enter a 6-digit code to join a session.</CardDescription>
@@ -226,6 +236,54 @@ export default function HomePage() {
               </Button>
             </CardContent>
           </Card>
+
+          <Card className="shadow-lg lg:col-span-1">
+            <CardHeader>
+              <CardTitle className="text-2xl flex items-center"><Mail className="mr-2 h-6 w-6 text-primary" />Email Sign Up / Sign In</CardTitle>
+              <CardDescription>Use your email and password.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="Enter your email"
+                className="text-lg h-12"
+                disabled={emailAuthDisabled || (user && !user.isAnonymous)}
+              />
+              <Input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Enter your password"
+                className="text-lg h-12"
+                disabled={emailAuthDisabled || (user && !user.isAnonymous)}
+              />
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  onClick={handleSignUpWithEmail}
+                  className="w-full text-md py-3"
+                  variant="outline"
+                  disabled={emailAuthDisabled || !emailInput || !passwordInput || (user && !user.isAnonymous)}
+                >
+                  <UserPlus className="mr-2 h-5 w-5"/>
+                  {isProcessingEmailAuth ? 'Processing...' : 'Sign Up'}
+                </Button>
+                <Button
+                  onClick={handleSignInWithEmail}
+                  className="w-full text-md py-3"
+                  disabled={emailAuthDisabled || !emailInput || !passwordInput || (user && !user.isAnonymous)}
+                >
+                  <LogIn className="mr-2 h-5 w-5"/>
+                  {isProcessingEmailAuth ? 'Processing...' : 'Sign In'}
+                </Button>
+              </div>
+               {user && !user.isAnonymous && (
+                <p className="text-xs text-muted-foreground text-center">You are already signed in as {user.email || user.displayName}.</p>
+              )}
+            </CardContent>
+          </Card>
+
         </div>
       </div>
       <footer className="w-full text-center p-4 text-sm text-muted-foreground">
