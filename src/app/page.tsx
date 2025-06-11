@@ -5,18 +5,19 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase'; // auth is now managed by AuthContext
-import { useAuth } from '@/contexts/auth-context'; // Import useAuth
+import { db } from '@/lib/firebase'; 
+import { useAuth } from '@/contexts/auth-context'; 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowRight, PlusCircle, UserCircle } from 'lucide-react'; // Changed UserPlus to UserCircle
+import { ArrowRight, PlusCircle, UserCircle } from 'lucide-react';
+import type { User as FirebaseUser } from 'firebase/auth';
 
 export default function HomePage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { user, loading: authLoading, ensureAnonymousSignIn, signInWithGoogle } = useAuth(); // Use auth context
+  const { user, loading: authLoading, ensureAnonymousSignIn, signInWithGoogle } = useAuth(); 
 
   const [joinCode, setJoinCode] = useState('');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
@@ -26,26 +27,40 @@ export default function HomePage() {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const createSession = async (isAccountSession: boolean) => {
+  const createSession = async (isAccountSession: boolean, userForSession?: FirebaseUser | null) => {
     setIsCreatingSession(true);
-    let currentUser = user;
+    
+    let activeUser: FirebaseUser | null = userForSession !== undefined ? userForSession : user; 
 
-    if (!currentUser && !isAccountSession) { // For "Quick Start", ensure anonymous
-      currentUser = await ensureAnonymousSignIn();
+    if (isAccountSession) {
+      if (!activeUser || activeUser.isAnonymous) {
+        toast({ title: "Google Sign-In Required", description: "Cannot create account-linked session without a successful Google Sign-In.", variant: "destructive" });
+        setIsCreatingSession(false);
+        return;
+      }
+    } else { // Quick session
+      if (!activeUser) { // If no user at all (not even anonymous yet)
+        activeUser = await ensureAnonymousSignIn(); // Attempt to get an anonymous user
+        if (!activeUser) {
+          toast({ title: "Session Start Failed", description: "Could not start an anonymous session. Please try again.", variant: "destructive" });
+          setIsCreatingSession(false);
+          return;
+        }
+      }
+      // For a quick session, activeUser can be anonymous or a Google user.
     }
     
-    if (!currentUser) {
-      toast({ title: "Authentication Required", description: isAccountSession ? "Please sign in with Google to create an account session." : "Could not start an anonymous session.", variant: "destructive" });
-      if(isAccountSession && !user) await signInWithGoogle(); // Prompt Google sign-in if trying account session and not logged in
-      setIsCreatingSession(false);
-      return;
+    if (!activeUser) { // Should be unreachable if logic above is correct
+        toast({ title: "Authentication Error", description: "Fatal: Could not determine user for session creation.", variant: "destructive"});
+        setIsCreatingSession(false);
+        return;
     }
 
     const newSessionId = generateSessionCode();
     try {
       const sessionRef = doc(db, 'sessions', newSessionId);
       await setDoc(sessionRef, {
-        adminUid: currentUser.uid,
+        adminUid: activeUser.uid,
         isRoundActive: true,
         likeClicks: 0,
         dislikeClicks: 0,
@@ -54,11 +69,11 @@ export default function HomePage() {
         soundsEnabled: true,
         resultsVisible: true,
         participants: {},
-        sessionType: isAccountSession ? 'account' : 'quick', // Set sessionType
+        sessionType: isAccountSession ? 'account' : 'quick', 
         presenterQueue: [],
         currentPresenterIndex: -1,
         currentPresenterName: "",
-        presenterScores: [], // Initialize presenterScores
+        presenterScores: [], 
       });
       toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Redirecting...` });
       router.push(`/session/${newSessionId}`);
@@ -70,14 +85,33 @@ export default function HomePage() {
   };
   
   const handleCreateQuickSession = () => createSession(false);
-  const handleCreateAccountSession = () => {
-    if (!user || user.isAnonymous) {
-        toast({ title: "Sign In Required", description: "Please sign in with Google to create an account-based session.", variant: "default" });
-        signInWithGoogle();
-        return;
+
+  const handleCreateAccountSession = async () => {
+    // If user is already signed in with Google, proceed directly.
+    if (user && !user.isAnonymous) {
+      createSession(true, user);
+      return;
     }
-    createSession(true);
-  }
+
+    // If user is anonymous or null, prompt for Google Sign-In first.
+    toast({ 
+      title: "Google Sign-In Required", 
+      description: "Creating an account-linked session requires Google Sign-In. Proceeding to sign you in...",
+      variant: "default" 
+    });
+    const signedInGoogleUser = await signInWithGoogle(); // This is from useAuth()
+
+    if (signedInGoogleUser && !signedInGoogleUser.isAnonymous) {
+      // Successfully signed in with Google. Now, create the session.
+      createSession(true, signedInGoogleUser);
+    } else {
+      // signInWithGoogle would have shown its own error toast if it failed or was cancelled.
+      // If it returned null or an anonymous user (which shouldn't happen for Google Sign-In),
+      // we don't proceed to create the session.
+      // An additional toast here could be redundant if signInWithGoogle already handled it.
+      // console.log("Google Sign-In did not result in a non-anonymous user, or was cancelled.");
+    }
+  };
 
 
   const handleJoinSession = async () => {
@@ -86,13 +120,12 @@ export default function HomePage() {
       return;
     }
     setIsJoining(true);
-    // Ensure user is at least anonymously signed in before trying to join.
-    // This is important if they land here without any prior auth state.
+    
     if (!user) { 
         const signedInUser = await ensureAnonymousSignIn();
         if (!signedInUser) {
             setIsJoining(false);
-            return; // Error handled by ensureAnonymousSignIn
+            return; 
         }
     }
 
@@ -116,7 +149,8 @@ export default function HomePage() {
   };
 
   const createQuickButtonDisabled = isCreatingSession || authLoading;
-  const createAccountButtonDisabled = isCreatingSession || authLoading || (!user || user.isAnonymous);
+  // Disable account button if already creating, auth is loading, OR if user is signed in but not with Google (which is handled by the function now)
+  const createAccountButtonDisabled = isCreatingSession || authLoading;
 
 
   return (
@@ -149,7 +183,7 @@ export default function HomePage() {
                 className="w-full text-lg py-6"
                 disabled={createQuickButtonDisabled}
               >
-                {isCreatingSession && !user?.isAnonymous ? 'Creating...' : 'Quick Start (Anonymous)'}
+                {isCreatingSession ? 'Creating...' : 'Quick Start (Anonymous)'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
                 No account needed. Core features for immediate use.
@@ -161,7 +195,7 @@ export default function HomePage() {
                 disabled={createAccountButtonDisabled}
               >
                 <UserCircle className="mr-2 h-5 w-5"/> 
-                {user && !user.isAnonymous ? 'Create Account Session' : 'Sign in for Account Session'}
+                {isCreatingSession ? 'Processing...' : (user && !user.isAnonymous ? 'Create Account Session' : 'Sign in for Account Session')}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
                 Sign in with Google to link sessions to your account (future features).
