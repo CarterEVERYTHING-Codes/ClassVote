@@ -648,6 +648,19 @@ export default function SessionPage() {
 
   let sessionStatusMessage = "";
   let presenterDisplayMessage = "";
+  let currentPresenterInfoForDisplay = "";
+
+
+  if (sessionData.currentPresenterName === "End of Queue") {
+    currentPresenterInfoForDisplay = "End of Queue";
+  } else if (isSpecificPresenterActive && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && sessionData.currentPresenterIndex !== undefined) {
+    currentPresenterInfoForDisplay = `${sessionData.currentPresenterName} (${sessionData.currentPresenterIndex + 1} of ${sessionData.presenterQueue.length})`;
+  } else if (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length > 0) {
+    currentPresenterInfoForDisplay = `Queue ready (${sessionData.presenterQueue.length} presenter${sessionData.presenterQueue.length === 1 ? '' : 's'})`;
+  } else {
+    currentPresenterInfoForDisplay = "N/A";
+  }
+
 
   if (isSpecificPresenterActive) {
       presenterDisplayMessage = `Now Presenting: ${sessionData.currentPresenterName}`;
@@ -857,7 +870,7 @@ export default function SessionPage() {
                                                     <span>{p.nickname || 'Anonymous User'}</span>
                                                     <Button
                                                         variant="outline"
-                                                        size="xs" // Custom size or use sm
+                                                        size="xs" 
                                                         onClick={() => {
                                                             const currentQueueNames = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name !== '');
                                                             if (p.nickname && !currentQueueNames.includes(p.nickname)) {
@@ -880,15 +893,15 @@ export default function SessionPage() {
                                     </ScrollArea>
                                 </details>
                             )}
-                            <div className="flex flex-col sm:flex-row gap-2">
-                                <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full sm:flex-grow text-sm" disabled={isProcessingAdminAction}>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                                <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full text-sm" disabled={isProcessingAdminAction}>
                                     Set/Update Presenter List
                                 </Button>
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <Button
                                             onClick={handleNextPresenter} 
-                                            className="w-full sm:w-auto text-sm bg-primary hover:bg-primary/90"
+                                            className="w-full text-sm bg-primary hover:bg-primary/90"
                                             disabled={nextFeedbackRoundButtonDisabled}
                                         >
                                             Next Feedback Round <ChevronsRight className="ml-1 h-4 w-4"/>
@@ -897,9 +910,9 @@ export default function SessionPage() {
                                     <TooltipContent><p>Advance to the next presenter. Records current scores, resets for next.</p></TooltipContent>
                                 </Tooltip>
                             </div>
-                             {!isPresenterQueueEffectivelyEmpty && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && (
+                             {!isPresenterQueueEffectivelyEmpty && (
                                 <p className="text-xs text-muted-foreground">
-                                    Current: {sessionData.currentPresenterName || "N/A"} ({(sessionData.currentPresenterIndex ?? -1) + 1} of {sessionData.presenterQueue.length})
+                                    Current: {currentPresenterInfoForDisplay}
                                 </p>
                             )}
                             <div className="flex items-center space-x-2 pt-2">
