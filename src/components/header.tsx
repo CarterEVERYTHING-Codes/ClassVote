@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogIn, LogOut, UserCircle, LifeBuoy, LayoutDashboard, Award } from 'lucide-react'; // Added Award for My Results
+import { LogIn, LogOut, UserCircle, LifeBuoy, BarChart3 } from 'lucide-react'; // Changed LayoutDashboard & Award to BarChart3
 import { ThemeToggleButton } from './theme-toggle-button';
 import {
   Tooltip,
@@ -62,28 +62,14 @@ const Header: React.FC = () => {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard')} className="px-2 sm:px-3">
-                      <LayoutDashboard className="mr-1 h-4 w-4" /> 
-                      <span className="hidden sm:inline">Dashboard</span>
-                      <span className="sm:hidden text-xs">Dashboard</span>
+                    <Button variant="ghost" size="sm" onClick={() => router.push('/results')} className="px-2 sm:px-3">
+                      <BarChart3 className="mr-1 h-4 w-4" /> 
+                      <span className="hidden sm:inline">Results</span>
+                      <span className="sm:hidden text-xs">Results</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>View Sessions You Administered</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={() => router.push('/my-results')} className="px-2 sm:px-3">
-                      <Award className="mr-1 h-4 w-4" /> 
-                      <span className="hidden sm:inline">My Results</span>
-                      <span className="sm:hidden text-xs">My Results</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View Your Presentation Scores</p>
+                    <p>View Session Results</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -112,3 +98,4 @@ const Header: React.FC = () => {
 
 export default Header;
 
+    
