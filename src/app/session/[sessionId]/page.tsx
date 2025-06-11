@@ -51,12 +51,12 @@ interface ParticipantData {
 
 interface PresenterEntry {
   name: string;
-  uid?: string | null; // UID of the participant if matched
+  uid?: string | null; 
 }
 
 interface PresenterScore {
   name: string;
-  uid?: string | null; // UID of the participant if matched
+  uid?: string | null; 
   likes: number;
   dislikes: number;
   netScore: number;
@@ -75,7 +75,7 @@ interface SessionData {
   presenterQueue?: PresenterEntry[];
   currentPresenterIndex?: number;
   currentPresenterName?: string;
-  currentPresenterUid?: string | null; // UID of the current presenter if matched
+  currentPresenterUid?: string | null; 
   sessionType?: string;
   presenterScores?: PresenterScore[];
 }
@@ -122,8 +122,6 @@ export default function SessionPage() {
         return;
     }
     
-    // Not including presenterQueueInput in dependency array to prevent re-subscription on typing.
-    // Logic to pre-fill presenterQueueInput if empty is handled below.
     const sessionDocRef = doc(db, 'sessions', sessionId);
     const unsubscribeFirestore = onSnapshot(sessionDocRef, (docSnap) => {
       setIsLoadingSession(false);
@@ -131,8 +129,6 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
-        // Pre-fill admin's presenter queue input only if it's currently empty and there's a queue in data
-        // This prevents overwriting admin's edits.
         if (isCurrentUserAdmin && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
            if (presenterQueueInput.trim() === '') { 
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
@@ -347,7 +343,7 @@ export default function SessionPage() {
         toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
       }
 
-      if (router.asPath.startsWith('/session/')) { 
+      if (typeof router.asPath === 'string' && router.asPath.startsWith('/session/')) { 
          router.push('/');
       }
     } catch (error) {
@@ -420,12 +416,11 @@ export default function SessionPage() {
             
             const { 
                 currentPresenterName: currentPresenterNameFromState,
-                currentPresenterUid: currentPresenterUidFromState, // Already using this from state
+                currentPresenterUid: currentPresenterUidFromState,
                 likeClicks: currentLikesFromState, 
                 dislikeClicks: currentDislikesFromState,
                 currentPresenterIndex: currentIndexFromState = -1,
                 presenterQueue: currentQueueFromState = [],
-                presenterScores: currentPresenterScoresFromState = [],
             } = sessionData;
 
             const updatePayload: any = {
@@ -434,7 +429,6 @@ export default function SessionPage() {
             }; 
             let scoreRecordedMessage = "";
             
-            // Record score for the current presenter if they are valid
             if (currentPresenterNameFromState && 
                 currentPresenterNameFromState !== "End of Queue" && 
                 currentIndexFromState >= 0 && 
@@ -449,21 +443,19 @@ export default function SessionPage() {
                 };
                 updatePayload.presenterScores = arrayUnion(scoreToRecord);
                 scoreRecordedMessage = `Scores for ${currentPresenterNameFromState} (Likes: ${currentLikesFromState}, Dislikes: ${currentDislikesFromState}) recorded.`;
-            } else {
-                 updatePayload.presenterScores = currentPresenterScoresFromState; 
             }
-
+            
             const newIndex = currentIndexFromState + 1;
             updatePayload.currentPresenterIndex = newIndex;
 
             if (newIndex >= currentQueueFromState.length) { 
                 updatePayload.isRoundActive = false;
                 updatePayload.currentPresenterName = "End of Queue";
-                updatePayload.currentPresenterUid = null; // Explicitly null
+                updatePayload.currentPresenterUid = null; 
             } else { 
                 const nextPresenter = currentQueueFromState[newIndex];
                 updatePayload.currentPresenterName = nextPresenter.name;
-                updatePayload.currentPresenterUid = nextPresenter.uid || null; // Use UID from queue item
+                updatePayload.currentPresenterUid = nextPresenter.uid || null;
                 updatePayload.isRoundActive = true;
             }
             
@@ -482,7 +474,7 @@ export default function SessionPage() {
              if (scoreRecordedMessage) toastDescription += " Overall leaderboard updated.";
              toast({ title: toastTitle, description: toastDescription, variant: "default" });
         },
-        "", // Success message handled by the toast in the function
+        "", 
         "Could not advance to the next feedback round."
     );
 
@@ -696,7 +688,7 @@ export default function SessionPage() {
       selfNickname &&
       sessionData.currentPresenterName === selfNickname &&
       sessionData.currentPresenterName !== "End of Queue" &&
-      sessionData.currentPresenterUid === authUser.uid // Ensure UID match as well
+      sessionData.currentPresenterUid === authUser.uid 
   );
   
   const isOverallLeaderboardVisibleToUser = sessionData.resultsVisible || isCurrentUserAdmin;
