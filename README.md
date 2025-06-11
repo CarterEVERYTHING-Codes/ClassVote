@@ -64,7 +64,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                request.resource.data.presenterQueue.size() == 0 &&
                                request.resource.data.currentPresenterIndex == -1 &&
                                request.resource.data.currentPresenterName == "" &&
-                               request.resource.data.currentPresenterUid == null && // Ensure currentPresenterUid starts null or undefined
+                               request.resource.data.currentPresenterUid == null &&
                                request.resource.data.presenterScores is list && request.resource.data.presenterScores.size() == 0 &&
                                request.resource.data.createdAt == request.time;
 
@@ -113,7 +113,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) ||
                                             (
                                                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive', 'presenterScores']) &&
-                                                request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 // Only allow adding one score
+                                                request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
+                                                request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName // Check last added score
                                             )
                                         )
                                       ) ||
@@ -169,7 +170,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                           // Subcase 1.1: Score for previous presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            request.resource.data.presenterScores[-1].name == resource.data.currentPresenterName && // Ensure the name matches the one being scored
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && // Check last added score
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                               'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
                                               'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
@@ -195,7 +196,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                           // Subcase 2.1: Score for the actual last presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            request.resource.data.presenterScores[-1].name == resource.data.currentPresenterName && // Ensure the name matches the one being scored
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && // Check last added score
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                               'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
                                               'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
@@ -397,3 +398,4 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
