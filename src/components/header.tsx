@@ -34,18 +34,19 @@ const Header: React.FC = () => {
           <Image src="/ClassVote-Ico-Favicon.png" alt="ClassVote Icon" width={32} height={32} data-ai-hint="logo icon" className="rounded-md" />
           <span className="font-bold hidden sm:inline-block">ClassVote</span>
         </Link>
-        <nav className="flex items-center space-x-2">
+        <nav className="flex items-center space-x-2 sm:space-x-3">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon"
-                  className="h-9 w-9"
+                  size="sm" // Adjusted size to accommodate text
+                  className="px-2 sm:px-3" // Adjust padding if needed
                   onClick={() => window.open(feedbackFormUrl, '_blank', 'noopener,noreferrer')}
                 >
-                  <LifeBuoy className="h-[1.2rem] w-[1.2rem]" />
-                  <span className="sr-only">Feedback / Report Bug</span>
+                  <LifeBuoy className="h-[1.2rem] w-[1.2rem] mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Feedback</span>
+                  <span className="sm:hidden">Feedback</span> 
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -55,7 +56,7 @@ const Header: React.FC = () => {
           </TooltipProvider>
 
           {loading ? (
-            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-9 w-24" /> // Adjusted skeleton height to match button
           ) : user && !user.isAnonymous ? (
             <>
               <span className="text-sm text-muted-foreground hidden md:inline">
