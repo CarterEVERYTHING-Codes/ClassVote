@@ -1,15 +1,14 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion } from 'firebase/firestore';
-import { db } from '@/lib/firebase'; // auth is now managed by AuthContext
-import { useAuth } from '@/contexts/auth-context'; // Import useAuth
-import { User as FirebaseUserType } from 'firebase/auth'; // Alias Firebase User type
+import { db } from '@/lib/firebase'; 
+import { useAuth } from '@/contexts/auth-context'; 
+import { User as FirebaseUserType } from 'firebase/auth'; 
 import GoodBadButtonsLoader from '@/components/good-bad-buttons-loader';
 import Leaderboard from '@/components/leaderboard';
-import OverallLeaderboard from '@/components/overall-leaderboard'; // Import OverallLeaderboard
+import OverallLeaderboard from '@/components/overall-leaderboard'; 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,14 +39,13 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-// ThemeToggleButton is now in global Header
 import { cn } from "@/lib/utils";
 
 
 interface ParticipantData {
   nickname: string;
   joinedAt: Timestamp | FieldValue;
-  uid: string; // Ensure UID is part of participant data for clarity
+  uid: string; 
 }
 
 interface PresenterScore {
@@ -55,6 +53,7 @@ interface PresenterScore {
   likes: number;
   dislikes: number;
   netScore: number;
+  // uid?: string; // Future: for student-specific past results
 }
 
 interface SessionData {
@@ -84,13 +83,12 @@ export default function SessionPage() {
   const router = useRouter();
   const sessionId = params.sessionId as string;
   const { toast } = useToast();
-  const { user: authUser, loading: authLoading, ensureAnonymousSignIn } = useAuth(); // Use auth context
+  const { user: authUser, loading: authLoading, ensureAnonymousSignIn } = useAuth(); 
 
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
-  const [isLoadingSession, setIsLoadingSession] = useState(true); // Renamed for clarity
+  const [isLoadingSession, setIsLoadingSession] = useState(true); 
   const [error, setError] = useState<string | null>(null);
 
-  // currentUser from auth context is now authUser
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
   
@@ -112,7 +110,7 @@ export default function SessionPage() {
       return;
     }
 
-    if (authLoading) { // Wait for auth to resolve
+    if (authLoading) { 
         setIsLoadingSession(true);
         return;
     }
@@ -180,7 +178,7 @@ export default function SessionPage() {
   const handleSetNickname = async () => {
     let currentUser = authUser;
     if (!currentUser) {
-        currentUser = await ensureAnonymousSignIn(); // Ensure at least anonymous
+        currentUser = await ensureAnonymousSignIn(); 
     }
 
     if (!currentUser || !nicknameInput.trim() || sessionData?.sessionEnded) {
@@ -224,7 +222,7 @@ export default function SessionPage() {
       const newParticipantData: ParticipantData = {
         nickname: trimmedNickname,
         joinedAt: serverTimestamp(),
-        uid: currentUser.uid // Store UID
+        uid: currentUser.uid 
       };
       await updateDoc(sessionDocRef, {
         [`participants.${currentUser.uid}`]: newParticipantData
@@ -330,7 +328,7 @@ export default function SessionPage() {
     try {
       const sessionDocRef = doc(db, 'sessions', sessionId);
       if (!sessionData.sessionEnded) { 
-        // Record final presenter's score if queue was active and ended by "End Session"
+        
         if (
             sessionData.currentPresenterName &&
             sessionData.currentPresenterName !== "End of Queue" &&
@@ -348,13 +346,14 @@ export default function SessionPage() {
                 sessionEnded: true, 
                 isRoundActive: false 
             });
+            toast({ title: "Session Ended", description: `Final scores for ${sessionData.currentPresenterName} recorded. Admin is redirecting...` });
         } else {
             await updateDoc(sessionDocRef, { 
                 sessionEnded: true, 
                 isRoundActive: false 
             });
+            toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
         }
-        toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
       } else {
         toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
       }
@@ -397,7 +396,7 @@ export default function SessionPage() {
                 likeClicks: 0,
                 dislikeClicks: 0,
                 isRoundActive: roundActive,
-                presenterScores: [], // Reset overall scores when queue is set/updated
+                presenterScores: [], 
             });
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
         },
@@ -416,10 +415,10 @@ export default function SessionPage() {
             }
             const sessionDocRef = doc(db, 'sessions', sessionId);
             
-            // Record score for the current presenter BEFORE advancing
             const currentPresenterName = sessionData.currentPresenterName;
             const currentLikes = sessionData.likeClicks;
             const currentDislikes = sessionData.dislikeClicks;
+            let scoreRecordedMessage = "";
 
             if (currentPresenterName && currentPresenterName !== "End of Queue" && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >=0) {
                 const scoreToRecord: PresenterScore = {
@@ -429,19 +428,19 @@ export default function SessionPage() {
                     netScore: currentLikes - currentDislikes,
                 };
                 await updateDoc(sessionDocRef, { presenterScores: arrayUnion(scoreToRecord) });
+                scoreRecordedMessage = `Scores for ${currentPresenterName} (Likes: ${currentLikes}, Dislikes: ${currentDislikes}) have been recorded.`;
             }
 
-            // Now advance to the next presenter
             const currentIndex = sessionData.currentPresenterIndex ?? -1;
             const newIndex = currentIndex + 1;
 
             if (newIndex >= sessionData.presenterQueue.length) {
-                toast({ title: "End of Queue", description: "You have reached the end of the presenter list. Round closed.", variant: "default" });
+                toast({ title: "End of Queue", description: `${scoreRecordedMessage} You have reached the end of the presenter list. Round closed.`, variant: "default" });
                 await updateDoc(doc(db, 'sessions', sessionId), { 
                     isRoundActive: false, 
                     currentPresenterName: "End of Queue", 
                     likeClicks: 0, 
-                    dislikeClicks: 0 
+                    dislikes: 0 
                 });
                 if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
                 return;
@@ -455,8 +454,10 @@ export default function SessionPage() {
                 isRoundActive: true,
             });
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
+            toast({ title: "Next Presenter", description: `${scoreRecordedMessage} Now presenting: ${sessionData.presenterQueue[newIndex]}. Scores reset and round started.`});
+
         },
-        "Advanced to the next presenter. Previous presenter's score recorded. Scores reset and round started.",
+        "", // Success message handled within the async function with more detail
         "Could not advance to the next presenter."
     );
 
@@ -569,8 +570,7 @@ export default function SessionPage() {
     );
   }
   
-  // Fallback if authUser is null but session data might be partially loaded or trying to load
-  // This also covers the case where ensureAnonymousSignIn is in progress but not yet completed for a new user
+
   if (!authUser && !authLoading && sessionData && !sessionData.sessionEnded && !hasSubmittedNickname) {
      return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-background">
@@ -607,7 +607,7 @@ export default function SessionPage() {
     );
   }
 
-  if (isLoadingSession || !sessionData) { // Generic loading if sessionData is null
+  if (isLoadingSession || !sessionData) { 
      return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <p className="text-lg text-muted-foreground animate-pulse">Loading session data...</p>
@@ -692,7 +692,6 @@ export default function SessionPage() {
                     </span>
                  )}
             </div>
-            {/* Theme Toggle Button is now in global Header */}
             <div className="flex flex-col items-center justify-center mb-1">
                 <div className="flex items-center justify-center">
                     <h1 className="text-3xl sm:text-4xl md:text-5xl font-headline font-bold text-foreground">

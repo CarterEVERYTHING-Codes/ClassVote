@@ -1,4 +1,3 @@
-
 "use client";
 
 import React from 'react';
@@ -8,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogIn, LogOut, UserCircle, LifeBuoy } from 'lucide-react';
+import { LogIn, LogOut, UserCircle, LifeBuoy, LayoutDashboard } from 'lucide-react';
 import { ThemeToggleButton } from './theme-toggle-button';
 import {
   Tooltip,
@@ -34,19 +33,19 @@ const Header: React.FC = () => {
           <Image src="/ClassVote-Ico-Favicon.png" alt="ClassVote Icon" width={32} height={32} data-ai-hint="logo icon" className="rounded-md" />
           <span className="font-bold hidden sm:inline-block">ClassVote</span>
         </Link>
-        <nav className="flex items-center space-x-2 sm:space-x-3">
+        <nav className="flex items-center space-x-1 sm:space-x-2">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="sm" // Adjusted size to accommodate text
-                  className="px-2 sm:px-3" // Adjust padding if needed
+                  size="sm" 
+                  className="px-2 sm:px-3" 
                   onClick={() => window.open(feedbackFormUrl, '_blank', 'noopener,noreferrer')}
                 >
                   <LifeBuoy className="h-[1.2rem] w-[1.2rem] mr-1 sm:mr-2" />
                   <span className="hidden sm:inline">Feedback</span>
-                  <span className="sm:hidden">Feedback</span> 
+                  <span className="sm:hidden text-xs">Feedback</span> 
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -56,19 +55,37 @@ const Header: React.FC = () => {
           </TooltipProvider>
 
           {loading ? (
-            <Skeleton className="h-9 w-24" /> // Adjusted skeleton height to match button
+            <Skeleton className="h-9 w-24" /> 
           ) : user && !user.isAnonymous ? (
             <>
-              <span className="text-sm text-muted-foreground hidden md:inline">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard')} className="px-2 sm:px-3">
+                      <LayoutDashboard className="mr-1 h-4 w-4" /> 
+                      <span className="hidden sm:inline">Dashboard</span>
+                      <span className="sm:hidden text-xs">Dashboard</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View Your Sessions</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <span className="text-sm text-muted-foreground hidden md:inline ml-2">
                 {user.displayName || user.email || 'User'}
               </span>
-              <Button variant="ghost" size="sm" onClick={signOut}>
-                <LogOut className="mr-1 h-4 w-4" /> Logout
+              <Button variant="ghost" size="sm" onClick={signOut} className="px-2 sm:px-3">
+                <LogOut className="mr-1 h-4 w-4" /> 
+                <span className="hidden sm:inline">Logout</span>
+                <span className="sm:hidden text-xs">Logout</span>
               </Button>
             </>
           ) : (
-            <Button variant="outline" size="sm" onClick={handleLoginSignUpClick}>
-              <UserCircle className="mr-1 h-4 w-4" /> Login / Sign Up
+            <Button variant="outline" size="sm" onClick={handleLoginSignUpClick} className="px-2 sm:px-3">
+              <UserCircle className="mr-1 h-4 w-4" /> 
+              <span className="hidden sm:inline">Login / Sign Up</span>
+              <span className="sm:hidden text-xs">Login/Up</span>
             </Button>
           )}
           <ThemeToggleButton />

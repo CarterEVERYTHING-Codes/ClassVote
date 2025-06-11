@@ -1,4 +1,3 @@
-
 # ClassVote
 
 ClassVote is a real-time, interactive web application where users create or join voting sessions to collectively provide feedback, typically for presentations. Participants must set a unique nickname for the session before they can engage. This nickname cannot be changed later. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, presenter queues, kick participants, and end sessions. An overall leaderboard displays scores for all presenters once the queue is complete or the session ends. Users can sign in with Google to (eventually) associate sessions and scores with their account.
@@ -30,6 +29,7 @@ ClassVote is a real-time, interactive web application where users create or join
         *   Go to the **Sign-in method** tab:
             *   Enable the "Anonymous" sign-in provider.
             *   Enable the "Google" sign-in provider. Ensure you select your project support email.
+            *   Enable the "Email/Password" sign-in provider.
         *   Go to the **Settings** tab (within Authentication):
             *   Scroll to **Authorized domains**.
             *   Click **Add domain** and add `localhost` if it's not already present. This is crucial for local development.
@@ -331,14 +331,17 @@ ClassVote is a real-time, interactive web application where users create or join
 *   **Overall Session Leaderboard:** Displayed when the presenter queue is finished or the session ends, showing scores for all presenters in that session.
 *   Admin controls to start/stop feedback rounds, clear current scores, and end sessions.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
-*   Authentication via Firebase (Anonymous or Google Sign-In).
+*   Authentication via Firebase (Anonymous, Google Sign-In, Email/Password).
 *   Informational tooltips for admin controls.
 *   **Participant Count Display:** Shows the current number of participants in the session.
-*   Global header with Login/Logout and theme toggle.
+*   Global header with Login/Logout (to `/auth` page), Feedback link, Dashboard link (for logged-in users), and theme toggle.
+*   **Admin Dashboard (`/dashboard`):** Logged-in (non-anonymous) users can view a history of sessions they administered, including the overall presenter scores for each.
 
 ## Next Steps (Future Enhancements - Not Yet Implemented)
+*   **Student View of Past Scores:** Allow students to view their own scores from past presentations. This requires changes to the session data model to robustly link presenter scores to user UIDs.
 *   Save presenter scores to their permanent user profiles (for logged-in Google users).
-*   Admin dashboard to view history of sessions they've hosted.
 *   More detailed user profiles.
+*   More formal mechanism for "sending" or sharing results with presenters post-session.
 
     
+
