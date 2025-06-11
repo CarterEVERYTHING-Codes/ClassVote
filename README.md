@@ -296,6 +296,16 @@ ClassVote is a real-time, interactive web application where users create or join
             *   **Verify "Authorized redirect URIs":** This list MUST include `https://YOUR_PROJECT_ID.firebaseapp.com/__/auth/handler`.
             *   If these are incorrect, it can cause this error. Firebase *should* manage these, but discrepancies can occur. Modifying these directly is an advanced step; proceed with caution.
 
+    *   **Troubleshooting "auth/popup-closed-by-user" error:**
+        This error means the Google Sign-In pop-up appeared, but was closed before authentication completed.
+        1.  **Browser Pop-up Blocker / Extensions:** The most common cause. Even if the pop-up appears, an aggressive blocker or extension (ad blocker, privacy tool) might interfere.
+            *   **Try in an Incognito/Private window.** This usually disables extensions.
+            *   Temporarily disable your browser's pop-up blocker and relevant extensions.
+        2.  **Redirect URI Mismatch (Less likely if "action invalid" was fixed, but re-check):** Ensure `https://YOUR_PROJECT_ID.firebaseapp.com/__/auth/handler` is *exactly* correct in the GCP OAuth 2.0 Client ID's "Authorized redirect URIs".
+        3.  **`authDomain` in `firebaseConfig`:** Double-check it's `YOUR_PROJECT_ID.firebaseapp.com` in `src/lib/firebase.ts`.
+        4.  **Third-party Cookies:** Ensure your browser isn't blocking third-party cookies, as this can sometimes interfere with pop-up authentication flows.
+        5.  **Manually Closing:** The user might have accidentally closed the pop-up too soon.
+
 
 4.  **Run the Development Server:**
     ```bash
@@ -332,4 +342,3 @@ ClassVote is a real-time, interactive web application where users create or join
 *   More detailed user profiles.
 
     
-
