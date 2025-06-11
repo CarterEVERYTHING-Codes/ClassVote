@@ -63,14 +63,9 @@ export default function HomePage() {
   };
 
   const handleCreateQuickSession = async () => {
-    // This button should be disabled if user is non-anonymous, so this primarily handles anonymous/new users
-    if (user && !user.isAnonymous) {
-        toast({title: "Account Session Recommended", description: "You're signed in! Please use 'Create Account Session'.", variant: "default"});
-        return;
-    }
-
+    // This button is only visible if user is anonymous or null
     setIsProcessingSessionAction(true);
-    let activeUser = user; // Could be null or anonymous
+    let activeUser = user; 
     if (!activeUser) {
       activeUser = await ensureAnonymousSignIn();
       if (!activeUser) {
@@ -79,16 +74,14 @@ export default function HomePage() {
         return;
       }
     }
-    // At this point, activeUser is either an existing anonymous user or a newly created one.
     await createSession(false, activeUser);
-    setIsProcessingSessionAction(false);
+    setIsProcessingSessionAction(false); // Already handled in createSession, but safe
   };
 
   const handleCreateAccountSession = () => {
     if (user && !user.isAnonymous) {
-      createSession(true, user);
+      createSession(true, user); // This will set isProcessingSessionAction
     } else {
-      // Redirect to the /auth page if user is not signed in non-anonymously
       toast({ title: "Sign In Required", description: "Please sign in or sign up to create an account-linked session. Redirecting...", variant: "default" });
       router.push('/auth');
     }
@@ -129,9 +122,6 @@ export default function HomePage() {
     setIsJoining(false);
   };
   
-  const quickStartDisabled = isProcessingSessionAction || authLoading || (user && !user.isAnonymous);
-  const createAccountButtonDisabled = isProcessingSessionAction || authLoading;
-
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-6 sm:p-12 md:p-16 bg-background">
@@ -151,7 +141,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl"> {/* Adjusted max-w-4xl for 2 cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
           {/* Create Session Card */}
           <Card className="shadow-lg">
             <CardHeader>
@@ -159,31 +149,34 @@ export default function HomePage() {
               <CardDescription>Start a feedback session.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button
-                onClick={handleCreateQuickSession}
-                className="w-full text-lg py-6"
-                disabled={quickStartDisabled}
-                title={user && !user.isAnonymous ? "Please use 'Create Account Session' as you are signed in." : "Start a quick anonymous session"}
-              >
-                {isProcessingSessionAction && !(user && !user.isAnonymous) ? 'Processing...' : 'Quick Start (Anonymous)'}
-              </Button>
-              <p className="text-xs text-muted-foreground text-center px-2">
-                {(user && !user.isAnonymous) 
-                  ? "Use 'Create Account Session' above for features linked to your account."
-                  : "No account needed. Core features for immediate use."
-                }
-              </p>
+              {(!user || user.isAnonymous) && (
+                <>
+                  <Button
+                    onClick={handleCreateQuickSession}
+                    className="w-full text-lg py-6"
+                    disabled={isProcessingSessionAction || authLoading}
+                  >
+                    {isProcessingSessionAction ? 'Processing...' : 'Quick Start (Anonymous)'}
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center px-2">
+                    No account needed. Core features for immediate use.
+                  </p>
+                </>
+              )}
+
               <Button
                 onClick={handleCreateAccountSession}
                 className="w-full text-lg py-6"
-                variant="outline"
-                disabled={createAccountButtonDisabled && !(user && !user.isAnonymous)} // Disable only if processing, not based on auth state here
+                variant={(!user || user.isAnonymous) ? "outline" : "default"}
+                // Disable if auth is loading OR if a session creation is processing (and this action is for a logged-in user)
+                disabled={authLoading || (user && !user.isAnonymous && isProcessingSessionAction)}
               >
                 <UserCircle className="mr-2 h-5 w-5"/>
-                {(isProcessingSessionAction && (user && !user.isAnonymous)) ? 'Processing...' : 'Create Account Session'}
+                {(isProcessingSessionAction && user && !user.isAnonymous) ? 'Processing...' : 'Create Account Session'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                Links session to your account (future features). Sign-in/up required if not already.
+                Links session to your account.
+                {(!user || user.isAnonymous) && " Sign-in/up required."}
               </p>
             </CardContent>
           </Card>
