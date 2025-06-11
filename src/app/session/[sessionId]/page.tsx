@@ -27,15 +27,10 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-  } from "@/components/ui/accordion";
+// Accordion imports removed as it's no longer used for admin controls
 import {
     Play, Pause, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX
+    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -170,7 +165,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname]);
+  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput]); // Added presenterQueueInput
 
 
   useEffect(() => {
@@ -770,6 +765,8 @@ export default function SessionPage() {
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                     isCurrentPresenterSelf={isSelfPresenter}
+                    likeClicks={sessionData.likeClicks}
+                    dislikeClicks={sessionData.dislikeClicks}
                 />
                  {showLiveOverallLeaderboard && (
                     <OverallLeaderboard presenterScores={sessionData.presenterScores!} />
@@ -820,179 +817,178 @@ export default function SessionPage() {
                 )}
 
                 {isCurrentUserAdmin && sessionData && !sessionData.sessionEnded && (
-                  <>
-                    <Card className="w-full shadow-lg">
+                  <div className="space-y-6">
+                    <Card className="shadow-lg">
                         <CardHeader>
-                            <CardTitle className="text-center text-xl md:text-2xl font-bold flex items-center justify-center">
-                            <ShieldAlert className="mr-2 h-6 w-6" /> Admin Controls
+                            <CardTitle className="text-lg font-semibold flex items-center">
+                                <ListChecks className="mr-2 h-5 w-5 text-primary" />
+                                Presenter & Round Management
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <Accordion type="single" collapsible className="w-full" defaultValue="presenters">
-                                <AccordionItem value="presenters">
-                                    <AccordionTrigger className="text-lg font-semibold">Presenter & Round Management</AccordionTrigger>
-                                    <AccordionContent className="space-y-4 pt-3">
-                                        <div className="space-y-3 border p-3 rounded-md bg-muted/20 dark:bg-muted/30">
-                                            <h3 className="text-md font-semibold flex items-center">
-                                                <ListChecks className="mr-2 h-5 w-5 text-primary" />Presenter List
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-6 w-6"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Enter one presenter name per line. Matched participant UIDs will be stored. Click 'Set/Update' to apply. This will reset scores and start/manage the round for presenters. If the list is empty, the session operates in a general feedback mode.</p></TooltipContent>
-                                                </Tooltip>
-                                            </h3>
-                                            <Textarea
-                                                placeholder="Enter presenter names, one per line..."
-                                                value={presenterQueueInput}
-                                                onChange={(e) => setPresenterQueueInput(e.target.value)}
-                                                rows={3}
-                                                disabled={isProcessingAdminAction}
-                                            />
-                                            {participantList.length > 0 && (
-                                                <>
-                                                    <h4 className="text-sm font-semibold mt-2 mb-1 text-muted-foreground">Add from participants:</h4>
-                                                    <ScrollArea className="h-28 border rounded-md p-2 bg-muted/30 dark:bg-muted/50">
-                                                        <ul className="space-y-1">
-                                                            {participantList.map(p => (
-                                                                <li key={p.uid} className="flex justify-between items-center text-xs p-1 hover:bg-muted/50 dark:hover:bg-muted/70 rounded">
-                                                                    <span>{p.nickname || 'Anonymous User'}</span>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => {
-                                                                            const currentQueueNames = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name !== '');
-                                                                            if (p.nickname && !currentQueueNames.includes(p.nickname)) {
-                                                                                setPresenterQueueInput(prev => `${prev.trim()}\n${p.nickname}`.trim());
-                                                                                toast({ title: "Added to Text Area", description: `${p.nickname} added to the presenter list text area. Click 'Set/Update' to apply.` });
-                                                                            } else if (!p.nickname) {
-                                                                                toast({ title: "Cannot Add", description: `Participant has no nickname set.`, variant: "destructive"});
-                                                                            } else {
-                                                                                toast({ title: "Already in List", description: `${p.nickname} is already in the presenter list text area.`});
-                                                                            }
-                                                                        }}
-                                                                        disabled={isProcessingAdminAction || !p.nickname}
-                                                                        className="h-6 px-1.5"
-                                                                    >
-                                                                        <UserPlusIcon className="mr-1 h-3 w-3"/> Add
-                                                                    </Button>
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    </ScrollArea>
-                                                </>
-                                            )}
-                                            <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                                                <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full sm:flex-grow text-sm" disabled={isProcessingAdminAction}>
-                                                    Set/Update Presenter List
-                                                </Button>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <Button
-                                                            onClick={handleNextPresenter} 
-                                                            className="w-full sm:w-auto text-sm"
-                                                            disabled={nextFeedbackRoundButtonDisabled}
-                                                        >
-                                                            Next Feedback Round <ChevronsRight className="ml-1 h-4 w-4"/>
-                                                        </Button>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent><p>Advance to the next feedback round (presenter). Scores reset, round opens.</p></TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                            {!isPresenterQueueEffectivelyEmpty && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && (
-                                                <p className="text-xs text-muted-foreground">
-                                                    Current: {sessionData.currentPresenterName || "N/A"} ({(sessionData.currentPresenterIndex ?? -1) + 1} of {sessionData.presenterQueue.length})
-                                                </p>
-                                            )}
-                                        </div>
+                            <div>
+                                <Label htmlFor="presenter-queue-input" className="text-sm font-medium">Presenter List</Label>
+                                <Tooltip>
+                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-6 w-6 align-middle"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
+                                    <TooltipContent side="top" align="start"><p className="max-w-xs">Enter one presenter name per line. If a name matches a participant's nickname, their account will be linked. Click 'Set/Update' to apply. This resets scores and starts the round for the first presenter or clears the queue.</p></TooltipContent>
+                                </Tooltip>
+                                <Textarea
+                                    id="presenter-queue-input"
+                                    placeholder="Enter presenter names, one per line..."
+                                    value={presenterQueueInput}
+                                    onChange={(e) => setPresenterQueueInput(e.target.value)}
+                                    rows={3}
+                                    disabled={isProcessingAdminAction}
+                                    className="mt-1"
+                                />
+                            </div>
 
-                                        <div className="space-y-3 border p-3 rounded-md bg-muted/20 dark:bg-muted/30">
-                                            <h3 className="text-md font-semibold">General Feedback Controls</h3>
-                                             <div className="text-xs text-center font-medium">
-                                                Feedback Round Status: <span className={sessionData.isRoundActive ? "text-green-500" : "text-red-500"}>
-                                                    {sessionData.isRoundActive ? 'OPEN' : 'PAUSED'}
-                                                </span>
-                                                {!isSpecificPresenterActive && !isPresenterQueueEffectivelyEmpty && sessionData.isRoundActive && sessionData.currentPresenterIndex === -1 && (
-                                                    <span className="text-xs text-orange-500"> (General - Queue set, not started)</span>
-                                                 )}
-                                                 {isPresenterQueueEffectivelyEmpty && sessionData.isRoundActive && (
-                                                    <span className="text-xs text-green-600"> (General Session)</span>
-                                                 )}
-                                            </div>
-                                            <div className="flex items-center">
-                                                <Button
-                                                    onClick={handleTogglePauseResumeFeedback}
-                                                    variant="outline"
-                                                    className="w-full text-sm"
-                                                    disabled={disablePauseResumeButton}
-                                                >
-                                                {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                                                {sessionData.isRoundActive ? 'Pause Student Feedback' : 'Resume Student Feedback'}
-                                                </Button>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Pause or resume the current feedback round. Does not reset scores.</p></TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                        </div>
-                                    </AccordionContent>
-                                </AccordionItem>
+                            {participantList.length > 0 && (
+                                <details className="group">
+                                    <summary className="flex items-center cursor-pointer text-sm font-medium text-primary hover:underline">
+                                        <ListPlus className="mr-2 h-4 w-4" />
+                                        Add from Participants to Queue
+                                        <span className="ml-1 text-muted-foreground text-xs">(click to expand)</span>
+                                    </summary>
+                                    <ScrollArea className="mt-2 h-32 border rounded-md p-2 bg-muted/30 dark:bg-muted/50 group-open:animate-accordion-down">
+                                        <ul className="space-y-1">
+                                            {participantList.map(p => (
+                                                <li key={`add-${p.uid}`} className="flex justify-between items-center text-xs p-1 hover:bg-muted/50 dark:hover:bg-muted/70 rounded">
+                                                    <span>{p.nickname || 'Anonymous User'}</span>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="xs" // Custom size or use sm
+                                                        onClick={() => {
+                                                            const currentQueueNames = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name !== '');
+                                                            if (p.nickname && !currentQueueNames.includes(p.nickname)) {
+                                                                setPresenterQueueInput(prev => `${prev.trim()}\n${p.nickname}`.trim());
+                                                                toast({ title: "Added to Text Area", description: `${p.nickname} added. Click 'Set/Update' to finalize.` });
+                                                            } else if (!p.nickname) {
+                                                                toast({ title: "Cannot Add", description: `Participant has no nickname.`, variant: "destructive"});
+                                                            } else {
+                                                                toast({ title: "Already in List", description: `${p.nickname} is already in the text area.`});
+                                                            }
+                                                        }}
+                                                        disabled={isProcessingAdminAction || !p.nickname}
+                                                        className="h-6 px-1.5 text-xs"
+                                                    >
+                                                        <UserPlusIcon className="mr-1 h-3 w-3"/> Add
+                                                    </Button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </ScrollArea>
+                                </details>
+                            )}
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full sm:flex-grow text-sm" disabled={isProcessingAdminAction}>
+                                    Set/Update Presenter List
+                                </Button>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            onClick={handleNextPresenter} 
+                                            className="w-full sm:w-auto text-sm bg-primary hover:bg-primary/90"
+                                            disabled={nextFeedbackRoundButtonDisabled}
+                                        >
+                                            Next Feedback Round <ChevronsRight className="ml-1 h-4 w-4"/>
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent><p>Advance to the next presenter. Records current scores, resets for next.</p></TooltipContent>
+                                </Tooltip>
+                            </div>
+                             {!isPresenterQueueEffectivelyEmpty && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && (
+                                <p className="text-xs text-muted-foreground">
+                                    Current: {sessionData.currentPresenterName || "N/A"} ({(sessionData.currentPresenterIndex ?? -1) + 1} of {sessionData.presenterQueue.length})
+                                </p>
+                            )}
+                            <div className="flex items-center space-x-2 pt-2">
+                                <Button
+                                    onClick={handleTogglePauseResumeFeedback}
+                                    variant="outline"
+                                    className="flex-1 text-sm"
+                                    disabled={disablePauseResumeButton}
+                                >
+                                {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                                {sessionData.isRoundActive ? 'Pause Feedback' : 'Resume Feedback'}
+                                </Button>
+                                <Tooltip>
+                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
+                                    <TooltipContent><p>Pause or resume the current feedback round. Does not reset scores.</p></TooltipContent>
+                                </Tooltip>
+                            </div>
+                            <p className={`text-xs text-center font-medium ${sessionData.isRoundActive ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                                Feedback Round Status: {sessionData.isRoundActive ? 'OPEN' : 'PAUSED'}
+                            </p>
+                        </CardContent>
+                    </Card>
 
-                                <AccordionItem value="settings">
-                                    <AccordionTrigger className="text-lg font-semibold">Session Settings & Features</AccordionTrigger>
-                                    <AccordionContent className="space-y-3 pt-3">
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
-                                            <Label htmlFor="sounds-enabled" className="flex items-center text-sm">
-                                                {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
-                                                Vote Sounds
-                                            </Label>
-                                            <div className="flex items-center">
-                                                <Switch
-                                                    id="sounds-enabled"
-                                                    checked={sessionData.soundsEnabled}
-                                                    onCheckedChange={handleToggleSounds}
-                                                    disabled={isProcessingAdminAction}
-                                                />
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Enable or disable sound effects for like/dislike votes for all participants.</p></TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center justify-between space-x-2 p-2 border rounded-md bg-muted/20 dark:bg-muted/30">
-                                            <Label htmlFor="results-visible" className="flex items-center text-sm">
-                                                {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
-                                                Live Results Visible
-                                            </Label>
-                                            <div className="flex items-center">
-                                                <Switch
-                                                    id="results-visible"
-                                                    checked={sessionData.resultsVisible}
-                                                    onCheckedChange={handleToggleResultsVisibility}
-                                                    disabled={isProcessingAdminAction}
-                                                />
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                                    <TooltipContent><p>Show or hide the live leaderboard scores from participants.</p></TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                        </div>
-                                    </AccordionContent>
-                                </AccordionItem>
-                            </Accordion>
-
-                            <div className="mt-6 pt-6 border-t dark:border-gray-700">
+                    <Card className="shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-lg font-semibold flex items-center">
+                                <Settings className="mr-2 h-5 w-5 text-primary" />
+                                Session Settings
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex items-center justify-between space-x-2 p-3 border rounded-md bg-muted/20 dark:bg-muted/30">
+                                <Label htmlFor="sounds-enabled" className="flex items-center text-sm cursor-pointer">
+                                    {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
+                                    Vote Sounds
+                                </Label>
                                 <div className="flex items-center">
-                                    <Button onClick={triggerEndSessionDialog} variant="destructive" className="w-full" disabled={isProcessingAdminAction && !showEndSessionDialog}>
-                                        <Trash2 className="mr-2 h-4 w-4" /> End Session
-                                    </Button>
+                                    <Switch
+                                        id="sounds-enabled"
+                                        checked={sessionData.soundsEnabled}
+                                        onCheckedChange={handleToggleSounds}
+                                        disabled={isProcessingAdminAction}
+                                    />
                                     <Tooltip>
-                                        <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-8 w-8"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
-                                        <TooltipContent><p>Permanently end this session for all participants. This action cannot be undone.</p></TooltipContent>
+                                        <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
+                                        <TooltipContent><p>Enable/disable vote sound effects for all.</p></TooltipContent>
+                                    </Tooltip>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between space-x-2 p-3 border rounded-md bg-muted/20 dark:bg-muted/30">
+                                <Label htmlFor="results-visible" className="flex items-center text-sm cursor-pointer">
+                                    {sessionData.resultsVisible ? <Eye className="mr-2 h-5 w-5" /> : <EyeOff className="mr-2 h-5 w-5" />}
+                                    Live Results Visible
+                                </Label>
+                                <div className="flex items-center">
+                                    <Switch
+                                        id="results-visible"
+                                        checked={sessionData.resultsVisible}
+                                        onCheckedChange={handleToggleResultsVisibility}
+                                        disabled={isProcessingAdminAction}
+                                    />
+                                    <Tooltip>
+                                        <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
+                                        <TooltipContent><p>Show/hide live leaderboard from participants.</p></TooltipContent>
                                     </Tooltip>
                                 </div>
                             </div>
                         </CardContent>
                     </Card>
-                  </>
+                    
+                    <Card className="shadow-lg border-destructive/50">
+                        <CardHeader>
+                            <CardTitle className="text-lg font-semibold flex items-center text-destructive">
+                                <ShieldAlert className="mr-2 h-5 w-5" /> Danger Zone
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                             <div className="flex items-center">
+                                <Button onClick={triggerEndSessionDialog} variant="destructive" className="w-full" disabled={isProcessingAdminAction && !showEndSessionDialog}>
+                                    <Trash2 className="mr-2 h-4 w-4" /> End Session
+                                </Button>
+                                <Tooltip>
+                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-8 w-8"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
+                                    <TooltipContent><p>Permanently end this session for all. Cannot be undone.</p></TooltipContent>
+                                </Tooltip>
+                            </div>
+                        </CardContent>
+                    </Card>
+                  </div>
                 )}
             </section>
         </div>
