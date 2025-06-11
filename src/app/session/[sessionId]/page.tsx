@@ -27,7 +27,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-// Accordion imports removed as it's no longer used for admin controls
 import {
     Play, Pause, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
     ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus
@@ -125,7 +124,10 @@ export default function SessionPage() {
         setSessionData(data);
 
         if (isCurrentUserAdmin && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
-           if (presenterQueueInput.trim() === '') { 
+           // Only set presenterQueueInput from Firestore if it's currently empty,
+           // or if the presenter index has advanced (to avoid overwriting admin's edits if they are just typing)
+           // The visual update of removing presented users is handled directly in handleNextPresenter for immediate feedback.
+           if (presenterQueueInput.trim() === '' && data.currentPresenterIndex === -1) { 
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
            }
         }
@@ -165,7 +167,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput]); // Added presenterQueueInput
+  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname]);
 
 
   useEffect(() => {
@@ -446,11 +448,15 @@ export default function SessionPage() {
                 updatePayload.isRoundActive = false;
                 updatePayload.currentPresenterName = "End of Queue";
                 updatePayload.currentPresenterUid = null; 
+                setPresenterQueueInput(''); // Clear textarea as queue is done
             } else { 
                 const nextPresenter = currentQueueFromState[newIndex];
                 updatePayload.currentPresenterName = nextPresenter.name;
                 updatePayload.currentPresenterUid = nextPresenter.uid || null;
                 updatePayload.isRoundActive = true;
+                // Update textarea to show remaining presenters
+                const remainingPresenters = currentQueueFromState.slice(newIndex).map(p => p.name).join('\n');
+                setPresenterQueueInput(remainingPresenters);
             }
             
             await updateDoc(sessionDocRef, updatePayload);
@@ -654,7 +660,9 @@ export default function SessionPage() {
   if (sessionData.currentPresenterName === "End of Queue") {
     currentPresenterInfoForDisplay = "End of Queue";
   } else if (isSpecificPresenterActive && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && sessionData.currentPresenterIndex !== undefined) {
-    currentPresenterInfoForDisplay = `${sessionData.currentPresenterName} (${sessionData.currentPresenterIndex + 1} of ${sessionData.presenterQueue.length})`;
+    const totalPresenters = sessionData.presenterQueue.length;
+    const currentIndexHuman = sessionData.currentPresenterIndex + 1;
+    currentPresenterInfoForDisplay = `${sessionData.currentPresenterName} (${currentIndexHuman} of ${totalPresenters})`;
   } else if (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length > 0) {
     currentPresenterInfoForDisplay = `Queue ready (${sessionData.presenterQueue.length} presenter${sessionData.presenterQueue.length === 1 ? '' : 's'})`;
   } else {
@@ -893,7 +901,7 @@ export default function SessionPage() {
                                     </ScrollArea>
                                 </details>
                             )}
-                            <div className="flex flex-col gap-2 sm:flex-row">
+                            <div className="flex flex-col gap-2">
                                 <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full text-sm" disabled={isProcessingAdminAction}>
                                     Set/Update Presenter List
                                 </Button>
