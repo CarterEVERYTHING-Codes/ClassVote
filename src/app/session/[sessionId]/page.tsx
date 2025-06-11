@@ -125,9 +125,7 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
-        // Pre-fill textarea if it's empty and there's a queue in Firestore
-        // This condition now only depends on data from Firestore and local state 'presenterQueueInput' being empty
-        if (presenterQueueInput === '' && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
+        if (presenterQueueInput === '' && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded && isCurrentUserAdmin) {
            setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
         }
 
@@ -168,7 +166,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, hasSubmittedNickname]); // REMOVED presenterQueueInput from dependencies
+  }, [sessionId, router, toast, authUser, authLoading, hasSubmittedNickname, isCurrentUserAdmin]);
 
 
   useEffect(() => {
@@ -345,8 +343,8 @@ export default function SessionPage() {
         ) {
             const currentPresenterDetails = sessionData.presenterQueue[sessionData.currentPresenterIndex];
             const finalScore: PresenterScore = {
-                name: currentPresenterDetails.name, // Use name from the queue object
-                uid: currentPresenterDetails.uid, // Use uid from the queue object
+                name: currentPresenterDetails.name, 
+                uid: currentPresenterDetails.uid, 
                 likes: sessionData.likeClicks,
                 dislikes: sessionData.dislikeClicks,
                 netScore: sessionData.likeClicks - sessionData.dislikeClicks,
@@ -433,12 +431,18 @@ export default function SessionPage() {
                 likeClicks: currentLikesFromState, 
                 dislikeClicks: currentDislikesFromState,
                 currentPresenterIndex: currentIndexFromState = -1,
-                presenterQueue: currentQueueFromState = []
+                presenterQueue: currentQueueFromState = [],
+                presenterScores: currentPresenterScoresFromState = []
             } = sessionData;
 
-            const updatePayload: any = {}; 
+            const updatePayload: any = {
+                likeClicks: 0,
+                dislikeClicks: 0,
+            }; 
             let scoreRecordedMessage = "";
+            let newPresenterScores = [...currentPresenterScoresFromState];
 
+            // Record score for the current presenter IF they exist and are not "End of Queue"
             if (currentPresenterNameFromState && 
                 currentPresenterNameFromState !== "End of Queue" && 
                 currentIndexFromState >= 0 && 
@@ -451,38 +455,41 @@ export default function SessionPage() {
                     dislikes: currentDislikesFromState,
                     netScore: currentLikesFromState - currentDislikesFromState,
                 };
-                updatePayload.presenterScores = arrayUnion(scoreToRecord);
+                newPresenterScores = [...newPresenterScores, scoreToRecord]; // Use spread to create new array for arrayUnion effect
+                updatePayload.presenterScores = newPresenterScores;
                 scoreRecordedMessage = `Scores for ${currentPresenterNameFromState} (Likes: ${currentLikesFromState}, Dislikes: ${currentDislikesFromState}) recorded.`;
             }
 
             const newIndex = currentIndexFromState + 1;
+            updatePayload.currentPresenterIndex = newIndex; // Always update the index
 
             if (newIndex >= currentQueueFromState.length) { 
                 updatePayload.isRoundActive = false;
                 updatePayload.currentPresenterName = "End of Queue";
-                updatePayload.currentPresenterUid = undefined;
-                updatePayload.likeClicks = 0;
-                updatePayload.dislikeClicks = 0;
+                updatePayload.currentPresenterUid = undefined; // Or deleteField() if you prefer
             } else { 
                 const nextPresenter = currentQueueFromState[newIndex];
-                updatePayload.currentPresenterIndex = newIndex;
                 updatePayload.currentPresenterName = nextPresenter.name;
                 updatePayload.currentPresenterUid = nextPresenter.uid;
-                updatePayload.likeClicks = 0;
-                updatePayload.dislikeClicks = 0;
                 updatePayload.isRoundActive = true;
             }
             
             await updateDoc(sessionDocRef, updatePayload);
             if (typeof window !== "undefined") localStorage.removeItem(`hasVoted_${sessionId}`);
 
+            let toastTitle = "Next Presenter";
+            let toastDescription = `${scoreRecordedMessage}`;
+
             if (newIndex >= currentQueueFromState.length) {
-                 toast({ title: "End of Presenter Queue", description: `${scoreRecordedMessage} ${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Round closed. Overall leaderboard updated.`, variant: "default" });
+                 toastTitle = "End of Presenter Queue";
+                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Round closed.`;
             } else {
-                 toast({ title: "Next Presenter", description: `${scoreRecordedMessage} ${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, round started. Overall leaderboard updated.`, variant: "default"});
+                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, round started.`;
             }
+             toastDescription += " Overall leaderboard updated.";
+             toast({ title: toastTitle, description: toastDescription, variant: "default" });
         },
-        "", 
+        "", // Success message handled by the dynamic toast
         "Could not advance to the next presenter."
     );
 
@@ -652,12 +659,14 @@ export default function SessionPage() {
     });
   
   const currentParticipantCount = Object.keys(sessionData.participants || {}).length;
-
-  const isQueueAtEnd = !isPresenterQueueEffectivelyEmpty &&
-                       sessionData.currentPresenterIndex !== undefined &&
-                       sessionData.presenterQueue!.length > 0 &&
-                       sessionData.currentPresenterIndex >= sessionData.presenterQueue!.length -1 &&
-                       sessionData.currentPresenterName !== "End of Queue"; 
+  
+  // Determine if the current presenter is the last one in the queue, but NOT yet "End of Queue"
+  const isCurrentPresenterTheLastInQueue = 
+    !isPresenterQueueEffectivelyEmpty &&
+    sessionData.currentPresenterIndex !== undefined &&
+    sessionData.presenterQueue!.length > 0 &&
+    sessionData.currentPresenterIndex === sessionData.presenterQueue!.length - 1 &&
+    sessionData.currentPresenterName !== "End of Queue";
 
 
   let sessionStatusMessage = "";
@@ -691,10 +700,9 @@ export default function SessionPage() {
 
   const nextPresenterButtonDisabled = isProcessingAdminAction ||
                                    isPresenterQueueEffectivelyEmpty ||
-                                   isQueueAtEnd || 
                                    sessionData.currentPresenterName === "End of Queue" || 
-                                   sessionData.currentPresenterIndex === -1; 
-
+                                   (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length === 0) || // Disable if queue is empty and index is -1
+                                   (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && !sessionData.isRoundActive && !isCurrentUserAdmin); // Non-admin, queue set, round closed
 
   const selfNickname = authUser ? sessionData?.participants?.[authUser.uid]?.nickname : undefined;
   const isSelfPresenter = !!(
@@ -832,7 +840,7 @@ export default function SessionPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <Accordion type="single" collapsible className="w-full">
+                            <Accordion type="single" collapsible className="w-full" defaultValue="presenters">
                                 <AccordionItem value="presenters">
                                     <AccordionTrigger className="text-lg font-semibold">Presenter & Round Management</AccordionTrigger>
                                     <AccordionContent className="space-y-4 pt-3">
@@ -1080,5 +1088,3 @@ export default function SessionPage() {
     </main>
   );
 }
-
-    
