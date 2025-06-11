@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
@@ -20,11 +20,18 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
 
+  useEffect(() => {
+    if (user && !user.isAnonymous && !authLoading) {
+      // If user is already signed in (non-anonymously) and auth is not loading, redirect them
+      router.replace('/');
+    }
+  }, [user, authLoading, router]);
+
   const handleAuthSuccess = () => {
     setIsProcessingAuth(false);
     // Redirect to homepage after successful authentication
-    // Later, we can enhance this to redirect to a 'next' URL if provided
-    router.push('/'); 
+    // useEffect will handle redirect if already logged in, this handles new logins
+    router.push('/');
   };
 
   const handleGoogleAuth = async () => {
@@ -73,11 +80,9 @@ export default function AuthPage() {
     );
   }
 
+  // If user becomes non-anonymous while on this page (e.g. due to auto-login), useEffect will redirect.
+  // This check prevents rendering the form if redirect is imminent.
   if (user && !user.isAnonymous) {
-    // If user is already signed in (non-anonymously), redirect them
-    // This prevents signed-in users from seeing the auth page unnecessarily
-    // Consider a small delay or a message before redirecting if instant redirect is jarring
-    router.replace('/'); 
     return (
          <main className="flex min-h-screen flex-col items-center justify-center p-6">
             <p className="text-lg text-muted-foreground">You are already signed in. Redirecting...</p>
@@ -115,9 +120,9 @@ export default function AuthPage() {
 
           <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="sr-only">Email</label>
+              <label htmlFor="email-auth" className="sr-only">Email</label>
               <Input
-                id="email"
+                id="email-auth"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -127,9 +132,9 @@ export default function AuthPage() {
               />
             </div>
             <div>
-              <label htmlFor="password" className="sr-only">Password</label>
+              <label htmlFor="password-auth" className="sr-only">Password</label>
               <Input
-                id="password"
+                id="password-auth"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
