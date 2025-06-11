@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -12,6 +13,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import OverallLeaderboard from '@/components/overall-leaderboard'; // Reuse for displaying scores
 import { ListCollapse, CalendarDays, AlertCircle, Home } from 'lucide-react';
 import { format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast'; // Added import
 
 interface PresenterScore {
   name: string;
@@ -35,6 +37,7 @@ export default function DashboardPage() {
   const [sessions, setSessions] = useState<SessionDoc[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast(); // Initialized toast
 
   useEffect(() => {
     if (authLoading) {
@@ -71,7 +74,7 @@ export default function DashboardPage() {
     };
 
     fetchSessions();
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, toast]); // Added toast to dependency array
 
   if (authLoading || isLoadingSessions) {
     return (
