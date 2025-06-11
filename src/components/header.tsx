@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogIn, LogOut, UserCircle, LifeBuoy, BarChart3 } from 'lucide-react'; // Changed LayoutDashboard & Award to BarChart3
+import { LogIn, LogOut, UserCircle, LifeBuoy, BarChart3, Settings } from 'lucide-react'; // Added Settings
 import { ThemeToggleButton } from './theme-toggle-button';
 import {
   Tooltip,
@@ -73,6 +73,20 @@ const Header: React.FC = () => {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={() => router.push('/account')} className="px-2 sm:px-3">
+                      <Settings className="mr-1 h-4 w-4" /> 
+                      <span className="hidden sm:inline">Account</span>
+                      <span className="sm:hidden text-xs">Account</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Manage Your Account</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <span className="text-sm text-muted-foreground hidden md:inline ml-2">
                 {user.displayName || user.email || 'User'}
               </span>
@@ -97,5 +111,3 @@ const Header: React.FC = () => {
 };
 
 export default Header;
-
-    

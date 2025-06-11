@@ -2,7 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, AuthError } from 'firebase/auth'; // Import AuthError
+import { User, AuthError } from 'firebase/auth';
 import { 
   auth, 
   googleProvider, 
@@ -10,8 +10,10 @@ import {
   firebaseSignOut, 
   signInAnonymously as firebaseSignInAnonymously,
   onAuthStateChanged,
-  createUserWithEmailAndPassword, // Import for email/password
-  signInWithEmailAndPassword // Import for email/password
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail as firebaseSendPasswordResetEmail, // Renamed import
+  deleteUser as firebaseDeleteUser // Renamed import
 } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -24,6 +26,8 @@ interface AuthContextType {
   signInWithEmail: (email: string, password: string) => Promise<User | null>;
   signOut: () => Promise<void>;
   ensureAnonymousSignIn: () => Promise<User | null>;
+  sendPasswordReset: () => Promise<boolean>; // Changed signature
+  deleteAccount: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,7 +45,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
-  const handleAuthError = (error: AuthError, defaultMessage: string) => {
+  const handleAuthError = (error: AuthError, defaultMessage: string, title: string = "Authentication Error") => {
     console.error("Firebase Auth Error: ", error);
     let message = defaultMessage;
     switch (error.code) {
@@ -69,11 +73,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       case 'auth/invalid-credential':
         message = 'Invalid credentials. Please check your email and password.';
         break;
+      case 'auth/requires-recent-login':
+        message = 'This operation is sensitive and requires recent authentication. Please sign out and sign back in to continue.';
+        title = "Action Required";
+        break;
       default:
         // Use defaultMessage or a generic one
         break;
     }
-    toast({ title: "Authentication Error", description: message, variant: "destructive" });
+    toast({ title: title, description: message, variant: "destructive" });
   }
 
   const signInWithGoogle = async (): Promise<User | null> => {
@@ -125,7 +133,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setLoading(true);
     try {
       await firebaseSignOut(auth);
-      setUser(null);
+      setUser(null); // Explicitly set user to null
       toast({ title: "Signed Out", description: "You have been signed out." });
     } catch (error) {
       handleAuthError(error as AuthError, "Could not sign out. Please try again.");
@@ -148,10 +156,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const sendPasswordReset = async (): Promise<boolean> => {
+    if (!auth.currentUser || !auth.currentUser.email) {
+      toast({title: "Error", description: "No authenticated user email found.", variant: "destructive"});
+      return false;
+    }
+    try {
+      await firebaseSendPasswordResetEmail(auth, auth.currentUser.email);
+      toast({title: "Password Reset Email Sent", description: `If an account exists for ${auth.currentUser.email}, you will receive an email with instructions to reset your password.`, variant: "default"});
+      return true;
+    } catch (error) {
+      handleAuthError(error as AuthError, "Could not send password reset email. Please try again later.", "Password Reset Failed");
+      return false;
+    }
+  };
+
+  const deleteAccount = async (): Promise<boolean> => {
+    if (!auth.currentUser) {
+       toast({title: "Error", description: "No user is currently signed in to delete.", variant: "destructive"});
+      return false;
+    }
+    const currentUser = auth.currentUser;
+    try {
+      await firebaseDeleteUser(currentUser);
+      toast({title: "Account Deleted", description: "Your account has been successfully deleted.", variant: "default"});
+      setUser(null); // Ensure local state is cleared
+      // SignOut is implicitly handled by deleteUser, but explicit signOut after might be needed if issues arise
+      return true;
+    } catch (error) {
+      handleAuthError(error as AuthError, "Could not delete your account. You might need to sign in again if it has been too long.", "Account Deletion Failed");
+      return false;
+    }
+  };
+
+
   const isAnonymousGuest = user ? user.isAnonymous : true;
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAnonymousGuest, signInWithGoogle, signUpWithEmail, signInWithEmail, signOut, ensureAnonymousSignIn }}>
+    <AuthContext.Provider value={{ 
+        user, 
+        loading, 
+        isAnonymousGuest, 
+        signInWithGoogle, 
+        signUpWithEmail, 
+        signInWithEmail, 
+        signOut, 
+        ensureAnonymousSignIn,
+        sendPasswordReset,
+        deleteAccount
+      }}>
       {children}
     </AuthContext.Provider>
   );
