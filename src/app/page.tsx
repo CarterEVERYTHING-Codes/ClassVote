@@ -50,7 +50,7 @@ export default function HomePage() {
         presenterQueue: [],
         currentPresenterIndex: -1,
         currentPresenterName: "",
-        currentPresenterUid: null, // Ensure this is explicitly set to null
+        currentPresenterUid: null,
         presenterScores: [],
       });
       toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Redirecting...` });
@@ -63,8 +63,14 @@ export default function HomePage() {
   };
 
   const handleCreateQuickSession = async () => {
+    // This button should be disabled if user is non-anonymous, so this primarily handles anonymous/new users
+    if (user && !user.isAnonymous) {
+        toast({title: "Account Session Recommended", description: "You're signed in! Please use 'Create Account Session'.", variant: "default"});
+        return;
+    }
+
     setIsProcessingSessionAction(true);
-    let activeUser = user;
+    let activeUser = user; // Could be null or anonymous
     if (!activeUser) {
       activeUser = await ensureAnonymousSignIn();
       if (!activeUser) {
@@ -73,6 +79,7 @@ export default function HomePage() {
         return;
       }
     }
+    // At this point, activeUser is either an existing anonymous user or a newly created one.
     await createSession(false, activeUser);
     setIsProcessingSessionAction(false);
   };
@@ -122,7 +129,7 @@ export default function HomePage() {
     setIsJoining(false);
   };
   
-  const quickStartDisabled = isProcessingSessionAction || authLoading;
+  const quickStartDisabled = isProcessingSessionAction || authLoading || (user && !user.isAnonymous);
   const createAccountButtonDisabled = isProcessingSessionAction || authLoading;
 
 
@@ -156,11 +163,15 @@ export default function HomePage() {
                 onClick={handleCreateQuickSession}
                 className="w-full text-lg py-6"
                 disabled={quickStartDisabled}
+                title={user && !user.isAnonymous ? "Please use 'Create Account Session' as you are signed in." : "Start a quick anonymous session"}
               >
-                {isProcessingSessionAction ? 'Processing...' : 'Quick Start (Anonymous)'}
+                {isProcessingSessionAction && !(user && !user.isAnonymous) ? 'Processing...' : 'Quick Start (Anonymous)'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                No account needed. Core features for immediate use.
+                {(user && !user.isAnonymous) 
+                  ? "Use 'Create Account Session' above for features linked to your account."
+                  : "No account needed. Core features for immediate use."
+                }
               </p>
               <Button
                 onClick={handleCreateAccountSession}
@@ -172,7 +183,7 @@ export default function HomePage() {
                 {(isProcessingSessionAction && (user && !user.isAnonymous)) ? 'Processing...' : 'Create Account Session'}
               </Button>
               <p className="text-xs text-muted-foreground text-center px-2">
-                Links session to your account (future features). Sign-in/up required.
+                Links session to your account (future features). Sign-in/up required if not already.
               </p>
             </CardContent>
           </Card>
