@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, usePathname } from 'next/navigation'; 
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase'; 
 import { useAuth } from '@/contexts/auth-context'; 
 import { User as FirebaseUserType } from 'firebase/auth'; 
@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
     Play, Pause, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus
+    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus, Save
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -72,7 +72,7 @@ interface SessionData {
   currentPresenterUid?: string | null; 
   sessionType?: string;
   presenterScores?: PresenterScore[];
-  isPermanentlySaved?: boolean; // New field
+  isPermanentlySaved?: boolean;
 }
 
 interface ParticipantToKick {
@@ -144,7 +144,16 @@ export default function SessionPage() {
 
 
         if (data.sessionEnded) {
-          setError("This session has ended.");
+          if (data.sessionType === 'quick' && !data.isPermanentlySaved) {
+            setError("This quick session has ended and was likely removed.");
+            // It might have been deleted by another admin instance, or this client is stale.
+            // Redirect if this client is still on the page.
+            setTimeout(() => {
+                if (pathname === `/session/${sessionId}`) router.push('/');
+            }, 3000);
+          } else {
+            setError("This session has ended.");
+          }
         } else {
           setError(null);
         }
@@ -177,7 +186,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput, isProcessingAdminAction]);
+  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput, isProcessingAdminAction, pathname]);
 
 
   useEffect(() => {
@@ -302,6 +311,16 @@ export default function SessionPage() {
       `Live results are now ${!sessionData!.resultsVisible ? 'VISIBLE' : 'HIDDEN'}.`,
       "Could not toggle results visibility."
     );
+  
+  const handleTogglePermanentSave = () =>
+    handleAdminAction(
+      async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, { isPermanentlySaved: !sessionData!.isPermanentlySaved });
+      },
+      `Session is now ${!sessionData!.isPermanentlySaved ? "permanently saved" : "set for potential auto-deletion after 30 days (if applicable)"}.`,
+      "Could not update session save status."
+    );
 
   const triggerEndSessionDialog = () => {
     if (isProcessingAdminAction || !isCurrentUserAdmin || !sessionData || !hasSubmittedNickname) { 
@@ -316,52 +335,80 @@ export default function SessionPage() {
       return;
     }
     
-    setIsProcessingAdminAction(true); 
-    try {
-      const sessionDocRef = doc(db, 'sessions', sessionId);
-      const updatePayload: any = { 
-          sessionEnded: true, 
-          isRoundActive: false 
-      };
+    const sessionDocRef = doc(db, 'sessions', sessionId);
+    setIsProcessingAdminAction(true);
 
-      if (!sessionData.sessionEnded) { 
-        if (
-            sessionData.currentPresenterName &&
-            sessionData.currentPresenterName !== "End of Queue" &&
-            sessionData.presenterQueue && sessionData.presenterQueue.length > 0 &&
-            sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >= 0 && sessionData.currentPresenterIndex < sessionData.presenterQueue.length
-        ) {
-            const currentPresenterDetails = sessionData.presenterQueue[sessionData.currentPresenterIndex];
-            const finalScore: PresenterScore = {
-                name: currentPresenterDetails.name, 
-                uid: currentPresenterDetails.uid || null, 
-                likes: sessionData.likeClicks,
-                dislikes: sessionData.dislikeClicks,
-                netScore: sessionData.likeClicks - sessionData.dislikeClicks,
-            };
-            updatePayload.presenterScores = arrayUnion(finalScore);
-            await updateDoc(sessionDocRef, updatePayload);
-            toast({ title: "Session Ended", description: `Final scores for ${currentPresenterDetails.name} recorded. Admin is redirecting...` });
-        } else {
-            await updateDoc(sessionDocRef, updatePayload);
-            toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
+    // If it's a "quick" session and NOT marked as permanently saved, delete it.
+    if (sessionData.sessionType === 'quick' && !sessionData.isPermanentlySaved) {
+        try {
+            await deleteDoc(sessionDocRef);
+            toast({ title: "Quick Session Ended & Deleted", description: "The session has been removed. Admin is redirecting..." });
+            // No need to update local sessionData state as it will be gone
+            if (pathname && pathname.startsWith(`/session/${sessionId}`)) {
+                router.push('/');
+            }
+        } catch (error) {
+            console.error("Error deleting quick session: ", error);
+            let errorMessageText = "Could not delete quick session. Please try again.";
+            if (error instanceof FirestoreError) errorMessageText = `Could not delete quick session: ${error.message} (Code: ${error.code})`;
+            else if (error instanceof Error) errorMessageText = `Could not delete quick session: ${error.message}`;
+            toast({ title: "Error Ending Session", description: errorMessageText, variant: "destructive" });
+            // Fallback: try to mark as ended if delete failed, so it's not stuck.
+            try { await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false }); } catch (e) { console.error("Fallback end failed", e); }
+        } finally {
+            setIsProcessingAdminAction(false);
+            setShowEndSessionDialog(false);
         }
-      } else {
-        toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
-      }
-      
-      if (pathname && pathname.startsWith(`/session/${sessionId}`)) { 
-         router.push('/');
-      }
-    } catch (error) {
-      console.error("Error ending session details: ", error);
-      let errorMessageText = "Could not end session. Please try again.";
-      if (error instanceof FirestoreError) errorMessageText = `Could not end session: ${error.message} (Code: ${error.code})`;
-      else if (error instanceof Error) errorMessageText = `Could not end session: ${error.message}`;
-      toast({ title: "Error Ending Session", description: errorMessageText, variant: "destructive" });
-    } finally {
-      setIsProcessingAdminAction(false);
-      setShowEndSessionDialog(false);
+    } else {
+        // For account sessions or permanently saved quick sessions, mark as ended and update scores
+        try {
+            const updatePayload: any = {
+                sessionEnded: true,
+                isRoundActive: false
+            };
+
+            if (!sessionData.sessionEnded) { // Only update scores if it wasn't already ended
+                if (
+                    sessionData.currentPresenterName &&
+                    sessionData.currentPresenterName !== "End of Queue" &&
+                    sessionData.presenterQueue && sessionData.presenterQueue.length > 0 &&
+                    sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >= 0 && sessionData.currentPresenterIndex < sessionData.presenterQueue.length
+                ) {
+                    const currentPresenterDetails = sessionData.presenterQueue[sessionData.currentPresenterIndex];
+                    const finalScore: PresenterScore = {
+                        name: currentPresenterDetails.name,
+                        uid: currentPresenterDetails.uid || null,
+                        likes: sessionData.likeClicks,
+                        dislikes: sessionData.dislikeClicks,
+                        netScore: sessionData.likeClicks - sessionData.dislikeClicks,
+                    };
+                    updatePayload.presenterScores = arrayUnion(finalScore);
+                    await updateDoc(sessionDocRef, updatePayload);
+                    toast({ title: "Session Ended", description: `Final scores for ${currentPresenterDetails.name} recorded. Admin is redirecting...` });
+                } else {
+                    await updateDoc(sessionDocRef, updatePayload);
+                    toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
+                }
+            } else {
+                toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
+            }
+            
+            // Update local state to reflect ended session immediately if it wasn't deleted
+            setSessionData(prev => prev ? {...prev, sessionEnded: true, isRoundActive: false} : null);
+
+            if (pathname && pathname.startsWith(`/session/${sessionId}`)) {
+                router.push('/');
+            }
+        } catch (error) {
+            console.error("Error ending session details: ", error);
+            let errorMessageText = "Could not end session. Please try again.";
+            if (error instanceof FirestoreError) errorMessageText = `Could not end session: ${error.message} (Code: ${error.code})`;
+            else if (error instanceof Error) errorMessageText = `Could not end session: ${error.message}`;
+            toast({ title: "Error Ending Session", description: errorMessageText, variant: "destructive" });
+        } finally {
+            setIsProcessingAdminAction(false);
+            setShowEndSessionDialog(false);
+        }
     }
   };
 
@@ -525,7 +572,7 @@ export default function SessionPage() {
     );
   }
 
-  if (error && (!sessionData || sessionData.sessionEnded || error.includes("cannot be found") || error.includes("has ended"))) {
+  if (error && (!sessionData || sessionData.sessionEnded || error.includes("cannot be found") || error.includes("has ended") || error.includes("likely removed"))) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
@@ -774,7 +821,7 @@ export default function SessionPage() {
             <div className="mb-8 flex justify-center">
                 <GoodBadButtonsLoader
                     sessionId={sessionId}
-                    isRoundActive={feedbackSubmissionAllowed}
+                    isRoundActive={!!feedbackSubmissionAllowed}
                     soundsEnabled={sessionData.soundsEnabled}
                     roundId={sessionData?.currentPresenterIndex ?? -1}
                 />
@@ -996,6 +1043,24 @@ export default function SessionPage() {
                                     </Tooltip>
                                 </div>
                             </div>
+                             <div className="flex items-center justify-between space-x-2 p-3 border rounded-md bg-muted/20 dark:bg-muted/30">
+                                <Label htmlFor="permanent-save" className="flex items-center text-sm cursor-pointer">
+                                    <Save className="mr-2 h-5 w-5" />
+                                    Keep This Session
+                                </Label>
+                                <div className="flex items-center">
+                                    <Switch
+                                        id="permanent-save"
+                                        checked={!!sessionData.isPermanentlySaved}
+                                        onCheckedChange={handleTogglePermanentSave}
+                                        disabled={isProcessingAdminAction}
+                                    />
+                                    <Tooltip>
+                                        <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-7 w-7 -mr-1"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
+                                        <TooltipContent><p>{sessionData.isPermanentlySaved ? "Session is marked to be kept permanently." : "Session may be auto-deleted after 30 days of ending (if not linked to an account and this is off)."}</p></TooltipContent>
+                                    </Tooltip>
+                                </div>
+                            </div>
                         </CardContent>
                     </Card>
                     
@@ -1012,7 +1077,7 @@ export default function SessionPage() {
                                 </Button>
                                 <Tooltip>
                                     <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-8 w-8"><Info className="h-4 w-4 text-muted-foreground"/></Button></TooltipTrigger>
-                                    <TooltipContent><p>Permanently end this session for all. Cannot be undone.</p></TooltipContent>
+                                    <TooltipContent><p>End session. Unsaved 'Quick' sessions will be deleted immediately. Saved/Account sessions are marked as ended.</p></TooltipContent>
                                 </Tooltip>
                             </div>
                         </CardContent>
@@ -1023,7 +1088,7 @@ export default function SessionPage() {
         </div>
 
         <div className="mt-12 flex justify-center">
-            {isCurrentUserAdmin && sessionData && sessionData.sessionEnded && (
+            {isCurrentUserAdmin && sessionData && sessionData.sessionEnded && !(sessionData.sessionType === 'quick' && !sessionData.isPermanentlySaved) && (
                 <Card className="w-full max-w-md shadow-lg">
                     <CardHeader>
                         <CardTitle className="text-center text-xl font-bold flex items-center justify-center">
@@ -1054,13 +1119,19 @@ export default function SessionPage() {
                 <AlertDialogHeader>
                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                 <AlertDialogDescription>
-                    This action will permanently end the session for all participants. This cannot be undone.
-                    If there is an active presenter, their final scores will be recorded.
+                    This action will end the session. 
+                    If this is a 'Quick Session' and not marked to 'Keep Permanently', it will be <strong className="text-destructive">deleted immediately</strong>. 
+                    Otherwise, it will be marked as ended.
+                    If there is an active presenter, their final scores will be recorded (unless the session is deleted).
                 </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setShowEndSessionDialog(false)} disabled={isProcessingAdminAction && showEndSessionDialog}>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={executeEndSession} disabled={isProcessingAdminAction && showEndSessionDialog}>
+                <AlertDialogAction 
+                    onClick={executeEndSession} 
+                    disabled={isProcessingAdminAction && showEndSessionDialog}
+                    className={cn((sessionData?.sessionType === 'quick' && !sessionData?.isPermanentlySaved) && buttonVariants({variant: "destructive"}))}
+                >
                     {(isProcessingAdminAction && showEndSessionDialog) ? "Ending..." : "Yes, End Session"}
                 </AlertDialogAction>
                 </AlertDialogFooter>

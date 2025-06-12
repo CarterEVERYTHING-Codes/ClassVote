@@ -67,7 +67,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                request.resource.data.currentPresenterName == "" &&
                                request.resource.data.currentPresenterUid == null &&
                                request.resource.data.presenterScores is list && request.resource.data.presenterScores.size() == 0 &&
-                               request.resource.data.isPermanentlySaved == false && // New field check
+                               request.resource.data.isPermanentlySaved == false &&
                                request.resource.data.createdAt == request.time;
 
               allow update: if request.auth != null && resource.data.sessionEnded == false && (
@@ -202,8 +202,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                           // Subcase 1.1: Score for previous presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) && request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
+                                            request.resource.data.presenterScores[request.resource.data.presenterScores.size()].name is string && (request.resource.data.presenterScores[request.resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[request.resource.data.presenterScores.size()].uid == null) && request.resource.data.presenterScores[request.resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[request.resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[request.resource.data.presenterScores.size()].netScore is number &&
+                                            request.resource.data.presenterScores[request.resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
                                             (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) &&
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                               'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
@@ -230,9 +230,9 @@ ClassVote is a real-time, interactive web application where users create or join
                                           // Subcase 2.1: Score for the actual last presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) && request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
-                                            (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) &&
+                                            request.resource.data.presenterScores[request.resource.data.presenterScores.size()].name is string && (request.resource.data.presenterScores[request.resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[request.resource.data.presenterScores.size()].uid == null) && request.resource.data.presenterScores[request.resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[request.resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[request.resource.data.presenterScores.size()].netScore is number &&
+                                            request.resource.data.presenterScores[request.resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
+                                            (request.resource.data.presenterScores[request.resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) &&
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                               'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
                                               'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
@@ -268,16 +268,15 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.presenterScores == resource.data.presenterScores &&
                                     request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                                   ) ||
-                                  // Admin toggling permanent save status (only for active sessions)
+                                  // Admin toggling permanent save status
                                   (
-                                    resource.data.sessionEnded == false && // Can only toggle on active or non-explicitly ended sessions from admin UI for this rule scope
                                     request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved &&
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
                                     // All other fields must remain unchanged
                                     request.resource.data.isRoundActive == resource.data.isRoundActive &&
                                     request.resource.data.likeClicks == resource.data.likeClicks &&
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded && // Allow update even if sessionEnded is true from /results page
                                     request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                     request.resource.data.resultsVisible == resource.data.resultsVisible &&
                                     request.resource.data.participants == resource.data.participants &&
@@ -366,10 +365,10 @@ ClassVote is a real-time, interactive web application where users create or join
                                 request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                               )
                             ) ||
-                            // This outer OR covers scenarios where the session IS ended, but admin is updating isPermanentlySaved
+                            // This outer OR covers scenarios where the session IS ended, but admin is updating isPermanentlySaved from the /results page
                             (
                                 resource.data.adminUid == request.auth.uid &&
-                                resource.data.sessionEnded == true && // Only allow this if session is already ended
+                                resource.data.sessionEnded == true && 
                                 request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved &&
                                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
                                 // All other fields must remain unchanged
@@ -463,20 +462,101 @@ ClassVote is a real-time, interactive web application where users create or join
 *   **Presenter Self-View:** A presenter can see their own scores even if general results are hidden by the admin, if their UID is matched.
 *   **Overall Session Leaderboard:** Displayed as presenters complete their rounds, or when the presenter queue is finished or the session ends, showing scores for all presenters in that session. Sorts by likes.
 *   Admin controls to pause/resume feedback rounds and end sessions.
+*   **Session Retention & Deletion:**
+    *   Sessions are created with `isPermanentlySaved: false`.
+    *   Admins (including admins of "quick" sessions, while the session is active) can toggle a session to be "Permanently Saved" from the session management panel.
+    *   If a "quick" session is ended by an admin and it is *not* marked "Permanently Saved", it is deleted immediately.
+    *   "Account" sessions or "quick" sessions marked "Permanently Saved" are *not* deleted immediately upon ending but are kept for historical review on the "Results" page.
+    *   Admins can delete their "account" sessions or any "permanently saved" sessions they administer from the "Results" page.
+    *   **Automatic Deletion (Requires Cloud Functions - See "Next Steps"):**
+        *   Sessions that are `sessionEnded == true` and `isPermanentlySaved == false` are intended to be deleted after 30 days.
+        *   "Quick" sessions (`sessionType == 'quick'`) that are `sessionEnded == false` and have seen no activity (based on `createdAt` or a `lastActivityTimestamp` if implemented) for ~50 minutes are intended to be deleted.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Authentication via Firebase (Anonymous, Google Sign-In, Email/Password).
 *   Informational tooltips for admin controls.
 *   **Participant Count Display:** Shows the current number of participants in the session.
 *   Global header with Login/Logout (to `/auth` page), Feedback link, Results link (for logged-in users), and theme toggle.
 *   **Results Page (`/results`):** Logged-in (non-anonymous) users can view:
-    *   A history of sessions they administered, including the overall presenter scores for each. Admins can toggle a session to be "Permanently Saved" or delete it.
+    *   A history of sessions they administered (account sessions or those they manually saved), including the overall presenter scores for each. Admins can toggle a session to be "Permanently Saved" or delete it.
     *   A history of their own presentation scores from past sessions where their name/account was matched.
 *   **Account Page (`/account`):** Logged-in (non-anonymous) users can manage their account, including sending a password reset email (for email/password accounts) and deleting their account.
-*   **Session Retention:** Sessions are created with `isPermanentlySaved: false`. Admins can toggle this. Sessions not marked as permanently saved are intended to be deleted after 30 days via a separate, manually implemented Firebase Cloud Function.
 
-## Next Steps (Future Enhancements - Not Yet Implemented)
-*   **Automatic Deletion Cloud Function:** Implement a scheduled Firebase Cloud Function to delete sessions where `sessionEnded == true`, `isPermanentlySaved == false`, and `createdAt` is older than 30 days.
-*   More granular privacy controls for viewing session results if needed (currently all authenticated users can read session details for the "Results" page, though sensitive actions are admin-only).
+## Next Steps (Future Enhancements - Requires Server-Side Implementation)
+
+*   **Automatic Deletion Cloud Functions:** Implement scheduled Firebase Cloud Functions for session cleanup:
+    1.  **30-Day Cleanup:** Delete sessions where `sessionEnded == true`, `isPermanentlySaved == false`, and `createdAt` is older than 30 days.
+        ```typescript
+        // Conceptual Cloud Function (functions/src/index.ts)
+        // import * as functions from 'firebase-functions';
+        // import * as admin from 'firebase-admin';
+        // admin.initializeApp();
+        // const db = admin.firestore();
+
+        // export const deleteOldEndedSessions = functions.pubsub.schedule('every 24 hours').onRun(async (context) => {
+        //   const now = admin.firestore.Timestamp.now();
+        //   const thirtyDaysAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 30 * 24 * 60 * 60 * 1000);
+
+        //   const sessionsToDeleteQuery = db.collection('sessions')
+        //     .where('sessionEnded', '==', true)
+        //     .where('isPermanentlySaved', '==', false) // Only if not marked to be saved
+        //     .where('createdAt', '<', thirtyDaysAgo);
+
+        //   const snapshot = await sessionsToDeleteQuery.get();
+
+        //   if (snapshot.empty) {
+        //     console.log('No old, ended, unsaved sessions to delete.');
+        //     return null;
+        //   }
+
+        //   const batch = db.batch();
+        //   snapshot.docs.forEach(doc => {
+        //     console.log(`Deleting ended session ${doc.id} created at ${doc.data().createdAt.toDate()}`);
+        //     batch.delete(doc.ref);
+        //   });
+
+        //   await batch.commit();
+        //   console.log(`Successfully deleted ${snapshot.size} old, ended, unsaved sessions.`);
+        //   return null;
+        // });
+        ```
+    2.  **Stale Quick Session Cleanup (e.g., 50-Minute Inactivity):** Delete "quick" sessions (`sessionType == 'quick'`) that are still active (`sessionEnded == false`) but haven't seen activity for a defined period (e.g., 50-60 minutes). This ideally requires a `lastActivityTimestamp` field updated on votes/admin actions. A simpler proxy is to check `createdAt`.
+        ```typescript
+        // Conceptual Cloud Function (functions/src/index.ts) - Simpler version using createdAt
+        // export const deleteStaleQuickSessions = functions.pubsub.schedule('every 15 minutes').onRun(async (context) => {
+        //   const now = admin.firestore.Timestamp.now();
+        //   // Consider sessions older than 60 minutes (adjust as needed)
+        //   const sixtyMinutesAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 60 * 60 * 1000);
+
+        //   const sessionsToDeleteQuery = db.collection('sessions')
+        //     .where('sessionType', '==', 'quick')
+        //     .where('sessionEnded', '==', false) // Still active
+        //     .where('isPermanentlySaved', '==', false) // Not marked to be saved
+        //     .where('createdAt', '<', sixtyMinutesAgo); // Older than 60 mins
+
+        //   const snapshot = await sessionsToDeleteQuery.get();
+
+        //   if (snapshot.empty) {
+        //     console.log('No stale, active, unsaved quick sessions to delete.');
+        //     return null;
+        //   }
+
+        //   const batch = db.batch();
+        //   snapshot.docs.forEach(doc => {
+        //     console.log(`Deleting stale quick session ${doc.id} created at ${doc.data().createdAt.toDate()}`);
+        //     batch.delete(doc.ref);
+        //   });
+
+        //   await batch.commit();
+        //   console.log(`Successfully deleted ${snapshot.size} stale, active, unsaved quick sessions.`);
+        //   return null;
+        // });
+
+        // // To implement a more accurate "lastActivityTimestamp":
+        // // 1. Add `lastActivityTimestamp: serverTimestamp()` to session creation.
+        // // 2. Update `lastActivityTimestamp: serverTimestamp()` in Firestore for every vote, admin action, nickname set, etc.
+        // // 3. The Cloud Function would then query based on `lastActivityTimestamp` instead of `createdAt` for active sessions.
+        ```
+*   More granular privacy controls for viewing session results if needed.
 *   More formal mechanism for "sending" or sharing results with presenters post-session beyond the "Results" page.
 *   More detailed user profiles.
 *   Further optimization of Firestore queries for the Results page if performance becomes an issue with a very large number of sessions.
@@ -494,4 +574,5 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
 
