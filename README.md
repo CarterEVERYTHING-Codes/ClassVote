@@ -172,8 +172,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                       // Just updating queue and index (e.g., removing current, next one becomes current)
                                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive'])) ||
                                       // Only adding/removing from queue, index might not change if not current
-                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'likeClicks', 'dislikeClicks', 'isRoundActive'])) || // Added likeClicks/dislikeClicks here for safety if this path is taken
-                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue'])) // If only queue elements change
+                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'likeClicks', 'dislikeClicks', 'isRoundActive'])) || 
+                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue'])) 
                                     ) &&
                                     request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
                                   ) ||
@@ -218,7 +218,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                     // ensure other critical fields are unchanged
                                     request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks && request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
                                   ) ||
-                                  // Admin toggling permanent save status (on session page)
+                                  // Admin toggling permanent save status (on session page or results page)
                                   (
                                     request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved &&
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
@@ -264,31 +264,34 @@ ClassVote is a real-time, interactive web application where users create or join
                               ) ||
                               // User setting their own nickname
                               (
+                                // 1. Only the 'participants' field at the top level of the document is being changed.
                                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
+
+                                // 2. Basic structure checks for the current user's entry in the incoming 'participants' map.
                                 request.resource.data.participants is map &&
-                                request.auth.uid in request.resource.data.participants && // User is adding/updating their own entry
+                                request.auth.uid in request.resource.data.participants &&
                                 request.resource.data.participants[request.auth.uid].nickname is string &&
                                 request.resource.data.participants[request.auth.uid].nickname.size() > 0 &&
                                 request.resource.data.participants[request.auth.uid].nickname.size() <= 25 &&
                                 request.resource.data.participants[request.auth.uid].uid == request.auth.uid &&
-                                ( // joinedAt is set to request.time only on initial nickname set.
-                                  // This condition checks if it's a new participant OR if joinedAt was not previously set for this user.
+
+                                // 3. Logic for 'joinedAt': set on first join, immutable after.
+                                (
+                                  // If user was not in participants map before, or their 'joinedAt' was null (or not set)
                                   (!(request.auth.uid in resource.data.participants)) ||
+                                  (request.auth.uid in resource.data.participants && !('joinedAt' in resource.data.participants[request.auth.uid])) ||
                                   (request.auth.uid in resource.data.participants && resource.data.participants[request.auth.uid].joinedAt == null)
                                 ) ? request.resource.data.participants[request.auth.uid].joinedAt == request.time
-                                  : request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt && // joinedAt immutable after first set
+                                  : request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt &&
 
-                                // Ensure other participants' data is unchanged by iterating through incoming keys.
-                                // Also, ensure no participants are removed by a non-admin.
-                                request.resource.data.participants.keys().size() >= resource.data.participants.keys().size() &&
-                                (forall key in request.resource.data.participants.keys() :
-                                  (key == request.auth.uid) || // Current user's data can change as per above conditions
-                                  (
-                                    (key in resource.data.participants) && // Other key must have existed
-                                    request.resource.data.participants[key] == resource.data.participants[key] // And its value must be unchanged
-                                  )
+                                // 4. Validate changes within the 'participants' map itself.
+                                //    Ensures only the current user's entry in the map is added/modified.
+                                (
+                                  (resource.data.participants == null && request.resource.data.participants.keys().hasOnly([request.auth.uid])) ||
+                                  (resource.data.participants != null && request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid]))
                                 ) &&
-                                // Ensure other critical fields are unchanged
+
+                                // 5. Ensure other top-level critical fields are unchanged
                                 request.resource.data.likeClicks == resource.data.likeClicks &&
                                 request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
                                 request.resource.data.isRoundActive == resource.data.isRoundActive &&
@@ -506,4 +509,3 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
 
-```
