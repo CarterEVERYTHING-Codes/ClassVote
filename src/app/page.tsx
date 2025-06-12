@@ -52,6 +52,7 @@ export default function HomePage() {
         currentPresenterName: "",
         currentPresenterUid: null,
         presenterScores: [],
+        isPermanentlySaved: false, // New field
       });
       toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Participants join at classvote.online. Redirecting...` });
       router.push(`/session/${newSessionId}`);
@@ -153,7 +154,7 @@ export default function HomePage() {
                   <Button
                     onClick={handleCreateQuickSession}
                     className="w-full text-lg py-6"
-                    disabled={authLoading || (isProcessingSessionAction && (!user || user.isAnonymous))}
+                    disabled={!!(authLoading || (isProcessingSessionAction && (!user || user.isAnonymous)))}
                     title={authLoading ? "Loading user status..." : undefined}
                   >
                     {isProcessingSessionAction && (!user || user.isAnonymous) ? 'Processing...' : 'Quick Start (Anonymous)'}

@@ -5,14 +5,17 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, Timestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import OverallLeaderboard from '@/components/overall-leaderboard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ListCollapse, CalendarDays, AlertCircle, Home, UserCheck, ThumbsUp, ThumbsDown, TrendingUp, BarChart3, ShieldCheck } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ListCollapse, CalendarDays, AlertCircle, Home, UserCheck, ThumbsUp, ThumbsDown, TrendingUp, BarChart3, ShieldCheck, Save, Trash2, ShieldQuestion } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
@@ -31,12 +34,13 @@ interface SessionDocForResults {
   sessionEnded: boolean;
   presenterScores?: PresenterScoreData[];
   sessionType?: string;
+  isPermanentlySaved?: boolean; // New field
 }
 
 interface CombinedResult {
   session: SessionDocForResults;
   isAdminView: boolean;
-  userSpecificScores: PresenterScoreData[]; // Empty if isAdminView is true or no scores for user
+  userSpecificScores: PresenterScoreData[]; 
 }
 
 export default function ResultsPage() {
@@ -46,6 +50,10 @@ export default function ResultsPage() {
   const [combinedResults, setCombinedResults] = useState<CombinedResult[]>([]);
   const [isLoadingResults, setIsLoadingResults] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -61,7 +69,6 @@ export default function ResultsPage() {
       setError(null);
       try {
         const sessionsRef = collection(db, 'sessions');
-        // Fetch all sessions and order by creation date. Client-side will filter relevance.
         const q = query(sessionsRef, orderBy('createdAt', 'desc'));
         
         const querySnapshot = await getDocs(q);
@@ -69,7 +76,7 @@ export default function ResultsPage() {
 
         querySnapshot.forEach((docSnap) => {
           const sessionData = docSnap.data() as SessionDocForResults;
-          sessionData.id = docSnap.id; // Ensure ID is part of the session object
+          sessionData.id = docSnap.id; 
 
           const isAdmin = sessionData.adminUid === user.uid;
           let userSpecificScores: PresenterScoreData[] = [];
@@ -78,7 +85,6 @@ export default function ResultsPage() {
             userSpecificScores = sessionData.presenterScores.filter(score => score.uid === user.uid);
           }
 
-          // Add to results if user is admin OR has specific scores in this session
           if (isAdmin || userSpecificScores.length > 0) {
             fetchedCombinedResults.push({
               session: sessionData,
@@ -100,6 +106,49 @@ export default function ResultsPage() {
 
     fetchResults();
   }, [user, authLoading, router, toast]);
+
+  const handleTogglePermanentSave = async (sessionId: string, currentSaveStatus: boolean | undefined) => {
+    setIsProcessingAction(true);
+    try {
+      const sessionDocRef = doc(db, 'sessions', sessionId);
+      await updateDoc(sessionDocRef, { isPermanentlySaved: !currentSaveStatus });
+      setCombinedResults(prevResults =>
+        prevResults.map(r =>
+          r.session.id === sessionId
+            ? { ...r, session: { ...r.session, isPermanentlySaved: !currentSaveStatus } }
+            : r
+        )
+      );
+      toast({ title: "Session Updated", description: `Session is now ${!currentSaveStatus ? "permanently saved" : "set for potential auto-deletion after 30 days"}.` });
+    } catch (err) {
+      console.error("Error updating permanent save status:", err);
+      toast({ title: "Error", description: "Could not update session save status.", variant: "destructive" });
+    }
+    setIsProcessingAction(false);
+  };
+
+  const confirmDeleteSession = (sessionId: string) => {
+    setSessionToDelete(sessionId);
+    setShowDeleteConfirmDialog(true);
+  };
+
+  const executeDeleteSession = async () => {
+    if (!sessionToDelete) return;
+    setIsProcessingAction(true);
+    try {
+      const sessionDocRef = doc(db, 'sessions', sessionToDelete);
+      await deleteDoc(sessionDocRef);
+      setCombinedResults(prevResults => prevResults.filter(r => r.session.id !== sessionToDelete));
+      toast({ title: "Session Deleted", description: "The session has been permanently deleted." });
+    } catch (err) {
+      console.error("Error deleting session:", err);
+      toast({ title: "Error", description: "Could not delete session.", variant: "destructive" });
+    }
+    setIsProcessingAction(false);
+    setShowDeleteConfirmDialog(false);
+    setSessionToDelete(null);
+  };
+
 
   if (authLoading || isLoadingResults) {
     return (
@@ -146,6 +195,9 @@ export default function ResultsPage() {
             <BarChart3 className="mr-3 h-8 w-8 text-primary" /> Session Results
           </h1>
           <p className="text-muted-foreground">Review scores from sessions you've administered or participated in as a presenter.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Note: Sessions not marked "Keep Permanently" may be automatically deleted after 30 days. (Automatic deletion requires server-side setup).
+          </p>
         </div>
         <Button onClick={() => router.push('/')} variant="outline" className="mt-4 sm:mt-0">
           <Home className="mr-2 h-4 w-4" /> Back to Homepage
@@ -186,10 +238,40 @@ export default function ResultsPage() {
                         <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${session.sessionEnded ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'}`}>
                             {session.sessionEnded ? 'Ended' : 'Active/Unknown'}
                         </span>
+                         {isAdminView && (
+                            <span className={`mt-1 text-xs font-medium px-2.5 py-0.5 rounded-full ${session.isPermanentlySaved ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'}`}>
+                                {session.isPermanentlySaved ? <><Save className="inline h-3 w-3 mr-1"/>Kept</> : <><ShieldQuestion className="inline h-3 w-3 mr-1"/>Not Permanent</>}
+                            </span>
+                         )}
                     </div>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="px-6 pb-4">
+                {isAdminView && (
+                  <div className="mb-4 p-3 border rounded-md bg-muted/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor={`keep-session-${session.id}`} className="flex items-center text-sm font-medium">
+                        <Save className="mr-2 h-4 w-4" /> Keep This Session Permanently
+                      </Label>
+                      <Switch
+                        id={`keep-session-${session.id}`}
+                        checked={!!session.isPermanentlySaved}
+                        onCheckedChange={() => handleTogglePermanentSave(session.id, session.isPermanentlySaved)}
+                        disabled={isProcessingAction}
+                      />
+                    </div>
+                    <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        onClick={() => confirmDeleteSession(session.id)}
+                        disabled={isProcessingAction}
+                        className="w-full sm:w-auto"
+                    >
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete Session
+                    </Button>
+                  </div>
+                )}
+
                 {isAdminView ? (
                   session.presenterScores && session.presenterScores.length > 0 ? (
                     <OverallLeaderboard presenterScores={session.presenterScores} />
@@ -198,7 +280,7 @@ export default function ResultsPage() {
                       <p className="text-muted-foreground">No presenter scores were recorded for this session, or the presenter queue was not used.</p>
                     </div>
                   )
-                ) : ( // User specific scores view
+                ) : ( 
                   userSpecificScores.length > 0 ? (
                     <div>
                       <h3 className="text-md font-semibold mb-2">Your Presentations in this Session:</h3>
@@ -234,8 +316,29 @@ export default function ResultsPage() {
           ))}
         </Accordion>
       )}
+
+      <AlertDialog open={showDeleteConfirmDialog} onOpenChange={setShowDeleteConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete session {sessionToDelete}.
+              All associated data for this session will be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {setShowDeleteConfirmDialog(false); setSessionToDelete(null);}} disabled={isProcessingAction}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={executeDeleteSession} 
+              disabled={isProcessingAction}
+              className={buttonVariants({variant: "destructive"})}
+            >
+              {isProcessingAction ? "Deleting..." : "Yes, Delete Session"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </main>
   );
 }
-
-    

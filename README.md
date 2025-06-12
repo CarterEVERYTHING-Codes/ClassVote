@@ -67,6 +67,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                request.resource.data.currentPresenterName == "" &&
                                request.resource.data.currentPresenterUid == null &&
                                request.resource.data.presenterScores is list && request.resource.data.presenterScores.size() == 0 &&
+                               request.resource.data.isPermanentlySaved == false && // New field check
                                request.resource.data.createdAt == request.time;
 
               allow update: if request.auth != null && resource.data.sessionEnded == false && (
@@ -80,7 +81,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                   (
                                     request.resource.data.isRoundActive != resource.data.isRoundActive &&
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRoundActive']) &&
-                                    // All other critical fields must remain unchanged for this specific action
+                                    // All other critical fields must remain unchanged
                                     request.resource.data.likeClicks == resource.data.likeClicks &&
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
                                     request.resource.data.sessionEnded == resource.data.sessionEnded && 
@@ -91,7 +92,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                     request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                     request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                    request.resource.data.presenterScores == resource.data.presenterScores
+                                    request.resource.data.presenterScores == resource.data.presenterScores &&
+                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                                   ) ||
                                   // End session (may add final presenter score)
                                   (
@@ -117,7 +119,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.presenterQueue == resource.data.presenterQueue &&
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                     (request.resource.data.currentPresenterName == resource.data.currentPresenterName || (request.resource.data.presenterScores.size() > resource.data.presenterScores.size() && request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName) ) && 
-                                    (request.resource.data.currentPresenterUid == resource.data.currentPresenterUid || (request.resource.data.presenterScores.size() > resource.data.presenterScores.size() && (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null))) )
+                                    (request.resource.data.currentPresenterUid == resource.data.currentPresenterUid || (request.resource.data.presenterScores.size() > resource.data.presenterScores.size() && (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null))) ) &&
+                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                                   ) ||
                                   // Toggle soundsEnabled
                                   (
@@ -133,7 +136,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                     request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                     request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                    request.resource.data.presenterScores == resource.data.presenterScores
+                                    request.resource.data.presenterScores == resource.data.presenterScores &&
+                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                                   ) ||
                                   // Toggle resultsVisible
                                   (
@@ -149,7 +153,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                     request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                     request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                    request.resource.data.presenterScores == resource.data.presenterScores
+                                    request.resource.data.presenterScores == resource.data.presenterScores &&
+                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                                   ) ||
                                   // Set/Update Presenter Queue
                                   (
@@ -173,7 +178,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                                       'presenterQueue', 'currentPresenterIndex', 'currentPresenterName', 'currentPresenterUid',
                                       'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
-                                    ])
+                                    ]) &&
+                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                                   ) ||
                                   // Advancing Presenter
                                   (
@@ -184,6 +190,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                     request.resource.data.resultsVisible == resource.data.resultsVisible &&
                                     request.resource.data.participants == resource.data.participants &&
+                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved &&
                                     (
                                       // Case 1: Advancing to a valid next presenter
                                       (
@@ -258,7 +265,27 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                     request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                     request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                    request.resource.data.presenterScores == resource.data.presenterScores 
+                                    request.resource.data.presenterScores == resource.data.presenterScores &&
+                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
+                                  ) ||
+                                  // Admin toggling permanent save status (only for active sessions)
+                                  (
+                                    resource.data.sessionEnded == false && // Can only toggle on active or non-explicitly ended sessions from admin UI for this rule scope
+                                    request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved &&
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
+                                    // All other fields must remain unchanged
+                                    request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                    request.resource.data.likeClicks == resource.data.likeClicks &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                    request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                    request.resource.data.participants == resource.data.participants &&
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                    request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
+                                    request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
+                                    request.resource.data.presenterScores == resource.data.presenterScores
                                   )
                                 )
                               ) ||
@@ -299,7 +326,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                 request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                 request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                 request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                request.resource.data.presenterScores == resource.data.presenterScores
+                                request.resource.data.presenterScores == resource.data.presenterScores &&
+                                request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                               ) ||
                               // User setting their own nickname (immutable after first set)
                               (
@@ -334,9 +362,35 @@ ClassVote is a real-time, interactive web application where users create or join
                                 request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
                                 request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
                                 request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
-                                request.resource.data.presenterScores == resource.data.presenterScores
+                                request.resource.data.presenterScores == resource.data.presenterScores &&
+                                request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
                               )
+                            ) ||
+                            // This outer OR covers scenarios where the session IS ended, but admin is updating isPermanentlySaved
+                            (
+                                resource.data.adminUid == request.auth.uid &&
+                                resource.data.sessionEnded == true && // Only allow this if session is already ended
+                                request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved &&
+                                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
+                                // All other fields must remain unchanged
+                                request.resource.data.isRoundActive == resource.data.isRoundActive &&
+                                request.resource.data.likeClicks == resource.data.likeClicks &&
+                                request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                request.resource.data.sessionEnded == resource.data.sessionEnded &&
+                                request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                request.resource.data.participants == resource.data.participants &&
+                                request.resource.data.presenterQueue == resource.data.presenterQueue &&
+                                request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
+                                request.resource.data.currentPresenterName == resource.data.currentPresenterName &&
+                                request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
+                                request.resource.data.presenterScores == resource.data.presenterScores &&
+                                request.resource.data.adminUid == resource.data.adminUid && 
+                                request.resource.data.createdAt == resource.data.createdAt && 
+                                request.resource.data.sessionType == resource.data.sessionType
                             );
+
+              allow delete: if request.auth.uid == resource.data.adminUid;
             }
           }
         }
@@ -415,12 +469,14 @@ ClassVote is a real-time, interactive web application where users create or join
 *   **Participant Count Display:** Shows the current number of participants in the session.
 *   Global header with Login/Logout (to `/auth` page), Feedback link, Results link (for logged-in users), and theme toggle.
 *   **Results Page (`/results`):** Logged-in (non-anonymous) users can view:
-    *   A history of sessions they administered, including the overall presenter scores for each.
+    *   A history of sessions they administered, including the overall presenter scores for each. Admins can toggle a session to be "Permanently Saved" or delete it.
     *   A history of their own presentation scores from past sessions where their name/account was matched.
 *   **Account Page (`/account`):** Logged-in (non-anonymous) users can manage their account, including sending a password reset email (for email/password accounts) and deleting their account.
+*   **Session Retention:** Sessions are created with `isPermanentlySaved: false`. Admins can toggle this. Sessions not marked as permanently saved are intended to be deleted after 30 days via a separate, manually implemented Firebase Cloud Function.
 
 ## Next Steps (Future Enhancements - Not Yet Implemented)
-*   More granular privacy controls for viewing session results if needed (currently all authenticated users can read session details for the "Results" page).
+*   **Automatic Deletion Cloud Function:** Implement a scheduled Firebase Cloud Function to delete sessions where `sessionEnded == true`, `isPermanentlySaved == false`, and `createdAt` is older than 30 days.
+*   More granular privacy controls for viewing session results if needed (currently all authenticated users can read session details for the "Results" page, though sensitive actions are admin-only).
 *   More formal mechanism for "sending" or sharing results with presenters post-session beyond the "Results" page.
 *   More detailed user profiles.
 *   Further optimization of Firestore queries for the Results page if performance becomes an issue with a very large number of sessions.
@@ -438,3 +494,4 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+

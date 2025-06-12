@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter, usePathname } from 'next/navigation'; // Added usePathname
+import { useParams, useRouter, usePathname } from 'next/navigation'; 
 import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion } from 'firebase/firestore';
 import { db } from '@/lib/firebase'; 
 import { useAuth } from '@/contexts/auth-context'; 
@@ -72,6 +72,7 @@ interface SessionData {
   currentPresenterUid?: string | null; 
   sessionType?: string;
   presenterScores?: PresenterScore[];
+  isPermanentlySaved?: boolean; // New field
 }
 
 interface ParticipantToKick {
@@ -82,7 +83,7 @@ interface ParticipantToKick {
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
-  const pathname = usePathname(); // Get current pathname
+  const pathname = usePathname(); 
   const sessionId = params.sessionId as string;
   const { toast } = useToast();
   const { user: authUser, loading: authLoading, ensureAnonymousSignIn } = useAuth(); 
@@ -125,12 +126,15 @@ export default function SessionPage() {
         setSessionData(data);
 
         if (isCurrentUserAdmin && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
+           const currentQueueNames = data.presenterQueue.map(p => p.name).join('\n');
+           const remainingPresenters = (data.currentPresenterIndex !== undefined && data.currentPresenterIndex >=0 && data.currentPresenterIndex < data.presenterQueue.length) 
+                                      ? data.presenterQueue.slice(data.currentPresenterIndex).map(p => p.name).join('\n')
+                                      : (data.currentPresenterName === "End of Queue" ? "" : currentQueueNames);
+
            if (presenterQueueInput.trim() === '' && data.currentPresenterIndex === -1) { 
-             setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
+             setPresenterQueueInput(remainingPresenters);
            } else if (data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= 0 && data.currentPresenterIndex < data.presenterQueue.length) {
-             const remainingPresenters = data.presenterQueue.slice(data.currentPresenterIndex).map(p => p.name).join('\n');
-             // Only update if it's different to avoid loop and allow admin edits
-             if(presenterQueueInput !== remainingPresenters && !isProcessingAdminAction) { // Added !isProcessingAdminAction
+             if(presenterQueueInput !== remainingPresenters && !isProcessingAdminAction) { 
                  setPresenterQueueInput(remainingPresenters);
              }
            } else if (data.currentPresenterName === "End of Queue" || (data.presenterQueue.length > 0 && data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= data.presenterQueue.length) ) {
@@ -346,7 +350,6 @@ export default function SessionPage() {
         toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
       }
       
-      // Use pathname from usePathname() hook for App Router
       if (pathname && pathname.startsWith(`/session/${sessionId}`)) { 
          router.push('/');
       }
@@ -451,20 +454,20 @@ export default function SessionPage() {
             const newIndex = currentIndexFromState + 1;
             updatePayload.currentPresenterIndex = newIndex;
 
+            let remainingPresentersText = '';
             if (newIndex >= currentQueueFromState.length) { 
                 updatePayload.isRoundActive = false;
                 updatePayload.currentPresenterName = "End of Queue";
                 updatePayload.currentPresenterUid = null; 
-                setPresenterQueueInput(''); 
             } else { 
                 const nextPresenter = currentQueueFromState[newIndex];
                 updatePayload.currentPresenterName = nextPresenter.name;
                 updatePayload.currentPresenterUid = nextPresenter.uid || null;
                 updatePayload.isRoundActive = true;
-                const remainingPresenters = currentQueueFromState.slice(newIndex).map(p => p.name).join('\n');
-                setPresenterQueueInput(remainingPresenters);
+                remainingPresentersText = currentQueueFromState.slice(newIndex).map(p => p.name).join('\n');
             }
             
+            setPresenterQueueInput(remainingPresentersText); // Update textarea here
             await updateDoc(sessionDocRef, updatePayload);
 
             let toastTitle = "Next Feedback Round";
@@ -473,11 +476,8 @@ export default function SessionPage() {
             if (newIndex >= currentQueueFromState.length) {
                  toastTitle = "End of Presenter Queue";
                  toastDescription += `${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Feedback round closed.`;
-                 setPresenterQueueInput('');
             } else {
                  toastDescription += `${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, feedback round started.`;
-                 const remainingPresentersText = currentQueueFromState.slice(newIndex).map(p => p.name).join('\n');
-                 setPresenterQueueInput(remainingPresentersText);
             }
              if (scoreRecordedMessage) toastDescription += " Overall leaderboard updated.";
              toast({ title: toastTitle, description: toastDescription, variant: "default" });
@@ -619,11 +619,12 @@ export default function SessionPage() {
     );
   }
 
-  // Ensure these are always booleans for type safety
-  const presenterQueueFromData = sessionData.presenterQueue;
-  const currentPresenterIdxFromData = sessionData.currentPresenterIndex;
-  const currentPresenterNameFromData = sessionData.currentPresenterName;
-  const currentPresenterUidFromData = sessionData.currentPresenterUid;
+  const { 
+    presenterQueue: presenterQueueFromData, 
+    currentPresenterIndex: currentPresenterIdxFromData, 
+    currentPresenterName: currentPresenterNameFromData,
+    currentPresenterUid: currentPresenterUidFromData,
+  } = sessionData;
 
   const isPresenterQueueAvailableAndNotEmpty = !!(presenterQueueFromData && presenterQueueFromData.length > 0);
 
@@ -631,18 +632,13 @@ export default function SessionPage() {
     isPresenterQueueAvailableAndNotEmpty &&
     typeof currentPresenterIdxFromData === 'number' &&
     currentPresenterIdxFromData >= 0 &&
-    (presenterQueueFromData ? currentPresenterIdxFromData < presenterQueueFromData.length : false) && // type guard for length access
-    currentPresenterNameFromData !== "" &&
+    currentPresenterIdxFromData < (presenterQueueFromData?.length ?? 0) &&
+    !!currentPresenterNameFromData && 
     currentPresenterNameFromData !== "End of Queue";
 
-  const isCurrentPresenterTheLastInQueue =
-    isPresenterQueueAvailableAndNotEmpty &&
-    typeof currentPresenterIdxFromData === 'number' &&
-    (presenterQueueFromData ? currentPresenterIdxFromData === presenterQueueFromData.length - 1 : false) && // type guard
-    currentPresenterNameFromData !== "End of Queue";
 
   const canSubmitFeedbackGeneric = sessionData.isRoundActive === true && !sessionData.sessionEnded;
-  const feedbackSubmissionAllowed = canSubmitFeedbackGeneric && (isPresenterQueueAvailableAndNotEmpty ? isSpecificPresenterActive : true);
+  const feedbackSubmissionAllowed = !!(canSubmitFeedbackGeneric && (isPresenterQueueAvailableAndNotEmpty ? isSpecificPresenterActive : true));
 
 
   const copySessionCode = () => {
@@ -668,13 +664,14 @@ export default function SessionPage() {
   let presenterDisplayMessage = "";
   let currentPresenterInfoForDisplay = "";
 
+
   if (currentPresenterNameFromData === "End of Queue") {
     currentPresenterInfoForDisplay = "End of Queue";
   } else if (isSpecificPresenterActive && presenterQueueFromData && typeof currentPresenterIdxFromData === 'number') {
     const totalPresenters = presenterQueueFromData.length;
     const currentIndexHuman = currentPresenterIdxFromData + 1;
     currentPresenterInfoForDisplay = `${currentPresenterNameFromData} (${currentIndexHuman} of ${totalPresenters})`;
-  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1 && presenterQueueFromData) {
+  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1 && presenterQueueFromData && presenterQueueFromData.length > 0) {
     currentPresenterInfoForDisplay = `Queue ready (${presenterQueueFromData.length} presenter${presenterQueueFromData.length === 1 ? '' : 's'})`;
   } else {
     currentPresenterInfoForDisplay = "N/A";
@@ -912,7 +909,7 @@ export default function SessionPage() {
                                     </ScrollArea>
                                 </details>
                             )}
-                             <div className="flex flex-col gap-2">
+                            <div className="flex flex-col gap-2">
                                 <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full text-sm" disabled={isProcessingAdminAction}>
                                     Set/Update Presenter List
                                 </Button>
