@@ -127,14 +127,12 @@ export default function SessionPage() {
            if (presenterQueueInput.trim() === '' && data.currentPresenterIndex === -1) { 
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
            } else if (data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= 0 && data.currentPresenterIndex < data.presenterQueue.length) {
-            // If a presenter is active, keep the textarea reflecting the remaining queue
-            // This logic is also in handleNextPresenter, but good to have here for initial load/refresh
              const remainingPresenters = data.presenterQueue.slice(data.currentPresenterIndex).map(p => p.name).join('\n');
              if(presenterQueueInput.trim() === '' || presenterQueueInput !== remainingPresenters) {
                  setPresenterQueueInput(remainingPresenters);
              }
            } else if (data.currentPresenterName === "End of Queue" || (data.presenterQueue.length > 0 && data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= data.presenterQueue.length) ) {
-             if(presenterQueueInput.trim() !== '') setPresenterQueueInput(''); // Clear if queue is done
+             if(presenterQueueInput.trim() !== '') setPresenterQueueInput(''); 
            }
         }
 
@@ -173,7 +171,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname]);
+  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput]);
 
 
   useEffect(() => {
@@ -506,27 +504,6 @@ export default function SessionPage() {
   };
 
 
-  const isPresenterQueueEffectivelyEmpty = !sessionData?.presenterQueue || sessionData.presenterQueue.length === 0;
-
-  const isSpecificPresenterActive = !isPresenterQueueEffectivelyEmpty &&
-                                 sessionData?.currentPresenterIndex !== undefined &&
-                                 sessionData.currentPresenterIndex >= 0 &&
-                                 sessionData.presenterQueue!.length > 0 &&
-                                 sessionData.currentPresenterIndex < sessionData.presenterQueue!.length &&
-                                 sessionData.currentPresenterName !== "" &&
-                                 sessionData.currentPresenterName !== "End of Queue";
-
-  const canSubmitFeedbackGeneric = sessionData?.isRoundActive === true && !sessionData?.sessionEnded;
-  const feedbackSubmissionAllowed = canSubmitFeedbackGeneric && (isPresenterQueueEffectivelyEmpty || isSpecificPresenterActive);
-
-
-  const copySessionCode = () => {
-    if (!sessionId) return;
-    navigator.clipboard.writeText(sessionId)
-      .then(() => toast({ title: "Session Code Copied!", description: `${sessionId} - Tell participants to go to classvote.online` }))
-      .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
-  }
-
   if (authLoading || (isLoadingSession && !sessionData)) { 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
@@ -636,6 +613,36 @@ export default function SessionPage() {
     );
   }
 
+  const presenterQueueFromData = sessionData.presenterQueue;
+  const currentPresenterIdxFromData = sessionData.currentPresenterIndex;
+  const currentPresenterNameFromData = sessionData.currentPresenterName;
+
+  const isPresenterQueueAvailableAndNotEmpty = presenterQueueFromData && presenterQueueFromData.length > 0;
+
+  const isSpecificPresenterActive =
+    isPresenterQueueAvailableAndNotEmpty &&
+    typeof currentPresenterIdxFromData === 'number' &&
+    currentPresenterIdxFromData >= 0 &&
+    currentPresenterIdxFromData < presenterQueueFromData.length &&
+    currentPresenterNameFromData !== "" &&
+    currentPresenterNameFromData !== "End of Queue";
+
+  const isCurrentPresenterTheLastInQueue =
+    isPresenterQueueAvailableAndNotEmpty &&
+    typeof currentPresenterIdxFromData === 'number' &&
+    currentPresenterIdxFromData === presenterQueueFromData.length - 1 &&
+    currentPresenterNameFromData !== "End of Queue";
+
+  const canSubmitFeedbackGeneric = sessionData.isRoundActive === true && !sessionData.sessionEnded;
+  const feedbackSubmissionAllowed = canSubmitFeedbackGeneric && (isPresenterQueueAvailableAndNotEmpty ? isSpecificPresenterActive : true);
+
+
+  const copySessionCode = () => {
+    if (!sessionId) return;
+    navigator.clipboard.writeText(sessionId)
+      .then(() => toast({ title: "Session Code Copied!", description: `${sessionId} - Tell participants to go to classvote.online` }))
+      .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
+  }
 
   const participantList = Object.entries(sessionData.participants || {})
     .map(([uid, data]) => ({ uid, nickname: data.nickname, joinedAt: data.joinedAt }))
@@ -649,39 +656,31 @@ export default function SessionPage() {
   
   const currentParticipantCount = Object.keys(sessionData.participants || {}).length;
   
-  const isCurrentPresenterTheLastInQueue = 
-    !isPresenterQueueEffectivelyEmpty &&
-    sessionData.currentPresenterIndex !== undefined &&
-    sessionData.presenterQueue!.length > 0 &&
-    sessionData.currentPresenterIndex === sessionData.presenterQueue!.length - 1 &&
-    sessionData.currentPresenterName !== "End of Queue";
-
-
   let sessionStatusMessage = "";
   let presenterDisplayMessage = "";
   let currentPresenterInfoForDisplay = "";
 
 
-  if (sessionData.currentPresenterName === "End of Queue") {
+  if (currentPresenterNameFromData === "End of Queue") {
     currentPresenterInfoForDisplay = "End of Queue";
-  } else if (isSpecificPresenterActive && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex < sessionData.presenterQueue.length) {
-    const totalPresenters = sessionData.presenterQueue.length;
-    const currentIndexHuman = sessionData.currentPresenterIndex + 1;
-    currentPresenterInfoForDisplay = `${sessionData.currentPresenterName} (${currentIndexHuman} of ${totalPresenters})`;
-  } else if (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length > 0) {
-    currentPresenterInfoForDisplay = `Queue ready (${sessionData.presenterQueue.length} presenter${sessionData.presenterQueue.length === 1 ? '' : 's'})`;
+  } else if (isSpecificPresenterActive && presenterQueueFromData && currentPresenterIdxFromData !== undefined) {
+    const totalPresenters = presenterQueueFromData.length;
+    const currentIndexHuman = currentPresenterIdxFromData + 1;
+    currentPresenterInfoForDisplay = `${currentPresenterNameFromData} (${currentIndexHuman} of ${totalPresenters})`;
+  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1) {
+    currentPresenterInfoForDisplay = `Queue ready (${presenterQueueFromData.length} presenter${presenterQueueFromData.length === 1 ? '' : 's'})`;
   } else {
     currentPresenterInfoForDisplay = "N/A";
   }
 
 
   if (isSpecificPresenterActive) {
-      presenterDisplayMessage = `Now Presenting: ${sessionData.currentPresenterName}`;
+      presenterDisplayMessage = `Now Presenting: ${currentPresenterNameFromData}`;
       sessionStatusMessage = sessionData.isRoundActive ? "Feedback round is OPEN for the current presenter. Cast your vote!" : "Feedback round is PAUSED for the current presenter.";
-  } else if (sessionData.currentPresenterName === "End of Queue") {
+  } else if (currentPresenterNameFromData === "End of Queue") {
       presenterDisplayMessage = "Presenter queue finished.";
       sessionStatusMessage = "Feedback round is CLOSED.";
-  } else if (!isPresenterQueueEffectivelyEmpty && sessionData.currentPresenterIndex === -1) {
+  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1) {
       presenterDisplayMessage = "Presenter queue is set.";
       sessionStatusMessage = isCurrentUserAdmin ?
           (sessionData.isRoundActive ? "General feedback round is OPEN. You can also start the presentations." : "Admin can start the presentations or open a general feedback round.") :
@@ -692,21 +691,20 @@ export default function SessionPage() {
   }
 
 
-  const disablePauseResumeButton = isProcessingAdminAction || (sessionData.currentPresenterName === "End of Queue" && !sessionData.isRoundActive);
+  const disablePauseResumeButton = isProcessingAdminAction || (currentPresenterNameFromData === "End of Queue" && !sessionData.isRoundActive);
 
   const nextFeedbackRoundButtonDisabled = isProcessingAdminAction ||
-                                   isPresenterQueueEffectivelyEmpty ||
-                                   sessionData.currentPresenterName === "End of Queue" || 
-                                   (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length === 0) || 
-                                   (sessionData.currentPresenterIndex === -1 && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && !sessionData.isRoundActive && !isCurrentUserAdmin && !sessionData.sessionEnded); 
+                                   !isPresenterQueueAvailableAndNotEmpty ||
+                                   currentPresenterNameFromData === "End of Queue" || 
+                                   (currentPresenterIdxFromData === -1 && !sessionData.isRoundActive && !isCurrentUserAdmin && !sessionData.sessionEnded); 
 
   const selfNickname = authUser ? sessionData?.participants?.[authUser.uid]?.nickname : undefined;
   const isSelfPresenter = !!(
       authUser &&
-      sessionData?.currentPresenterName &&
+      currentPresenterNameFromData &&
       selfNickname &&
-      sessionData.currentPresenterName === selfNickname &&
-      sessionData.currentPresenterName !== "End of Queue" &&
+      currentPresenterNameFromData === selfNickname &&
+      currentPresenterNameFromData !== "End of Queue" &&
       sessionData.currentPresenterUid === authUser.uid 
   );
   
@@ -787,11 +785,12 @@ export default function SessionPage() {
                 "space-y-4 md:col-span-7" 
             )}>
                 <Leaderboard
+                    sessionId={sessionId}
                     likeClicks={sessionData.likeClicks}
                     dislikeClicks={sessionData.dislikeClicks}
                     resultsVisible={sessionData.resultsVisible}
-                    currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
-                    presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
+                    currentPresenterName={isSpecificPresenterActive ? currentPresenterNameFromData : (currentPresenterNameFromData === "End of Queue" ? "End of Queue" : null)}
+                    presenterQueueEmpty={!isPresenterQueueAvailableAndNotEmpty}
                     isCurrentPresenterSelf={isSelfPresenter}
                 />
                  {showLiveOverallLeaderboard && (
@@ -923,7 +922,7 @@ export default function SessionPage() {
                                     <TooltipContent><p>Advance to the next presenter. Records current scores, resets for next.</p></TooltipContent>
                                 </Tooltip>
                             </div>
-                             {!isPresenterQueueEffectivelyEmpty && (
+                             {isPresenterQueueAvailableAndNotEmpty && (
                                 <p className="text-xs text-muted-foreground">
                                     Current: {currentPresenterInfoForDisplay}
                                 </p>
