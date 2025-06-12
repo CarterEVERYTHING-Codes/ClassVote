@@ -129,7 +129,8 @@ export default function SessionPage() {
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
            } else if (data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= 0 && data.currentPresenterIndex < data.presenterQueue.length) {
              const remainingPresenters = data.presenterQueue.slice(data.currentPresenterIndex).map(p => p.name).join('\n');
-             if(presenterQueueInput.trim() === '' || presenterQueueInput !== remainingPresenters) {
+             // Only update if it's different to avoid loop and allow admin edits
+             if(presenterQueueInput !== remainingPresenters && !isProcessingAdminAction) { // Added !isProcessingAdminAction
                  setPresenterQueueInput(remainingPresenters);
              }
            } else if (data.currentPresenterName === "End of Queue" || (data.presenterQueue.length > 0 && data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= data.presenterQueue.length) ) {
@@ -172,7 +173,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput]);
+  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput, isProcessingAdminAction]);
 
 
   useEffect(() => {
@@ -618,25 +619,26 @@ export default function SessionPage() {
     );
   }
 
+  // Ensure these are always booleans for type safety
   const presenterQueueFromData = sessionData.presenterQueue;
   const currentPresenterIdxFromData = sessionData.currentPresenterIndex;
   const currentPresenterNameFromData = sessionData.currentPresenterName;
   const currentPresenterUidFromData = sessionData.currentPresenterUid;
 
-  const isPresenterQueueAvailableAndNotEmpty = presenterQueueFromData && presenterQueueFromData.length > 0;
+  const isPresenterQueueAvailableAndNotEmpty = !!(presenterQueueFromData && presenterQueueFromData.length > 0);
 
   const isSpecificPresenterActive =
     isPresenterQueueAvailableAndNotEmpty &&
     typeof currentPresenterIdxFromData === 'number' &&
     currentPresenterIdxFromData >= 0 &&
-    currentPresenterIdxFromData < presenterQueueFromData.length && // Ensure index is within bounds
+    (presenterQueueFromData ? currentPresenterIdxFromData < presenterQueueFromData.length : false) && // type guard for length access
     currentPresenterNameFromData !== "" &&
     currentPresenterNameFromData !== "End of Queue";
 
   const isCurrentPresenterTheLastInQueue =
     isPresenterQueueAvailableAndNotEmpty &&
     typeof currentPresenterIdxFromData === 'number' &&
-    currentPresenterIdxFromData === presenterQueueFromData.length - 1 &&
+    (presenterQueueFromData ? currentPresenterIdxFromData === presenterQueueFromData.length - 1 : false) && // type guard
     currentPresenterNameFromData !== "End of Queue";
 
   const canSubmitFeedbackGeneric = sessionData.isRoundActive === true && !sessionData.sessionEnded;
@@ -672,7 +674,7 @@ export default function SessionPage() {
     const totalPresenters = presenterQueueFromData.length;
     const currentIndexHuman = currentPresenterIdxFromData + 1;
     currentPresenterInfoForDisplay = `${currentPresenterNameFromData} (${currentIndexHuman} of ${totalPresenters})`;
-  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1) {
+  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1 && presenterQueueFromData) {
     currentPresenterInfoForDisplay = `Queue ready (${presenterQueueFromData.length} presenter${presenterQueueFromData.length === 1 ? '' : 's'})`;
   } else {
     currentPresenterInfoForDisplay = "N/A";
@@ -910,7 +912,7 @@ export default function SessionPage() {
                                     </ScrollArea>
                                 </details>
                             )}
-                            <div className="flex flex-col gap-2">
+                             <div className="flex flex-col gap-2">
                                 <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full text-sm" disabled={isProcessingAdminAction}>
                                     Set/Update Presenter List
                                 </Button>
