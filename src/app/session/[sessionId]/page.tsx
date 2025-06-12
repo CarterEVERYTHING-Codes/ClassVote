@@ -889,7 +889,7 @@ export default function SessionPage() {
                                                     <span>{p.nickname || 'Anonymous User'}</span>
                                                     <Button
                                                         variant="outline"
-                                                        size="xs" 
+                                                        size="sm" 
                                                         onClick={() => {
                                                             const currentQueueNames = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name !== '');
                                                             if (p.nickname && !currentQueueNames.includes(p.nickname)) {
