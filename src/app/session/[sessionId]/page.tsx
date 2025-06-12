@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, usePathname } from 'next/navigation'; // Added usePathname
 import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion } from 'firebase/firestore';
 import { db } from '@/lib/firebase'; 
 import { useAuth } from '@/contexts/auth-context'; 
@@ -82,6 +82,7 @@ interface ParticipantToKick {
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname(); // Get current pathname
   const sessionId = params.sessionId as string;
   const { toast } = useToast();
   const { user: authUser, loading: authLoading, ensureAnonymousSignIn } = useAuth(); 
@@ -343,8 +344,9 @@ export default function SessionPage() {
       } else {
         toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
       }
-
-      if (router && typeof router.asPath === 'string' && router.asPath.startsWith('/session/')) { 
+      
+      // Use pathname from usePathname() hook for App Router
+      if (pathname && pathname.startsWith(`/session/${sessionId}`)) { 
          router.push('/');
       }
     } catch (error) {
@@ -470,8 +472,11 @@ export default function SessionPage() {
             if (newIndex >= currentQueueFromState.length) {
                  toastTitle = "End of Presenter Queue";
                  toastDescription += `${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Feedback round closed.`;
+                 setPresenterQueueInput('');
             } else {
                  toastDescription += `${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, feedback round started.`;
+                 const remainingPresentersText = currentQueueFromState.slice(newIndex).map(p => p.name).join('\n');
+                 setPresenterQueueInput(remainingPresentersText);
             }
              if (scoreRecordedMessage) toastDescription += " Overall leaderboard updated.";
              toast({ title: toastTitle, description: toastDescription, variant: "default" });
@@ -616,6 +621,7 @@ export default function SessionPage() {
   const presenterQueueFromData = sessionData.presenterQueue;
   const currentPresenterIdxFromData = sessionData.currentPresenterIndex;
   const currentPresenterNameFromData = sessionData.currentPresenterName;
+  const currentPresenterUidFromData = sessionData.currentPresenterUid;
 
   const isPresenterQueueAvailableAndNotEmpty = presenterQueueFromData && presenterQueueFromData.length > 0;
 
@@ -623,7 +629,7 @@ export default function SessionPage() {
     isPresenterQueueAvailableAndNotEmpty &&
     typeof currentPresenterIdxFromData === 'number' &&
     currentPresenterIdxFromData >= 0 &&
-    currentPresenterIdxFromData < presenterQueueFromData.length &&
+    currentPresenterIdxFromData < presenterQueueFromData.length && // Ensure index is within bounds
     currentPresenterNameFromData !== "" &&
     currentPresenterNameFromData !== "End of Queue";
 
@@ -660,10 +666,9 @@ export default function SessionPage() {
   let presenterDisplayMessage = "";
   let currentPresenterInfoForDisplay = "";
 
-
   if (currentPresenterNameFromData === "End of Queue") {
     currentPresenterInfoForDisplay = "End of Queue";
-  } else if (isSpecificPresenterActive && presenterQueueFromData && currentPresenterIdxFromData !== undefined) {
+  } else if (isSpecificPresenterActive && presenterQueueFromData && typeof currentPresenterIdxFromData === 'number') {
     const totalPresenters = presenterQueueFromData.length;
     const currentIndexHuman = currentPresenterIdxFromData + 1;
     currentPresenterInfoForDisplay = `${currentPresenterNameFromData} (${currentIndexHuman} of ${totalPresenters})`;
@@ -705,7 +710,7 @@ export default function SessionPage() {
       selfNickname &&
       currentPresenterNameFromData === selfNickname &&
       currentPresenterNameFromData !== "End of Queue" &&
-      sessionData.currentPresenterUid === authUser.uid 
+      currentPresenterUidFromData === authUser.uid 
   );
   
   const isOverallLeaderboardVisibleToUser = sessionData.resultsVisible || isCurrentUserAdmin;
