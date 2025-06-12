@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, usePathname } from 'next/navigation'; 
-import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion, deleteDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentData, serverTimestamp, Timestamp, FieldValue, increment, getDoc, FirestoreError, deleteField, arrayUnion, arrayRemove, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase'; 
 import { useAuth } from '@/contexts/auth-context'; 
 import { User as FirebaseUserType } from 'firebase/auth'; 
@@ -12,10 +12,10 @@ import Leaderboard from '@/components/leaderboard';
 import OverallLeaderboard from '@/components/overall-leaderboard'; 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from '@/hooks/use-toast';
 import {
     AlertDialog,
@@ -29,11 +29,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
     Play, Pause, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus, Save
+    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus, Save, RotateCcw, ListX, ListOrdered
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 
@@ -45,7 +45,8 @@ interface ParticipantData {
 
 interface PresenterEntry {
   name: string;
-  uid?: string | null; 
+  uid: string | null; // Firebase UID of the participant if they have an account
+  participantId: string; // The UID of the participant entry when they joined the session (could be anonymous UID)
 }
 
 interface PresenterScore {
@@ -66,13 +67,12 @@ interface SessionData {
   soundsEnabled: boolean;
   resultsVisible: boolean;
   participants: Record<string, ParticipantData>;
-  presenterQueue?: PresenterEntry[];
-  currentPresenterIndex?: number;
-  currentPresenterName?: string;
-  currentPresenterUid?: string | null; 
+  presenterQueue: PresenterEntry[]; // Changed
+  currentPresenterIndex: number; // Remains
   sessionType?: string;
   presenterScores?: PresenterScore[];
   isPermanentlySaved?: boolean;
+  votingMode: 'single' | 'infinite'; // New field
 }
 
 interface ParticipantToKick {
@@ -99,11 +99,9 @@ export default function SessionPage() {
   const [isSavingNickname, setIsSavingNickname] = useState(false);
   const [hasSubmittedNickname, setHasSubmittedNickname] = useState(false);
 
-  const [presenterQueueInput, setPresenterQueueInput] = useState('');
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
   const [showKickConfirmDialog, setShowKickConfirmDialog] = useState(false);
   const [participantToKick, setParticipantToKick] = useState<ParticipantToKick | null>(null);
-
 
   useEffect(() => {
     if (!sessionId) {
@@ -125,29 +123,9 @@ export default function SessionPage() {
         const data = docSnap.data() as SessionData;
         setSessionData(data);
 
-        if (isCurrentUserAdmin && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
-           const currentQueueNames = data.presenterQueue.map(p => p.name).join('\n');
-           const remainingPresenters = (data.currentPresenterIndex !== undefined && data.currentPresenterIndex >=0 && data.currentPresenterIndex < data.presenterQueue.length) 
-                                      ? data.presenterQueue.slice(data.currentPresenterIndex).map(p => p.name).join('\n')
-                                      : (data.currentPresenterName === "End of Queue" ? "" : currentQueueNames);
-
-           if (presenterQueueInput.trim() === '' && data.currentPresenterIndex === -1) { 
-             setPresenterQueueInput(remainingPresenters);
-           } else if (data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= 0 && data.currentPresenterIndex < data.presenterQueue.length) {
-             if(presenterQueueInput !== remainingPresenters && !isProcessingAdminAction) { 
-                 setPresenterQueueInput(remainingPresenters);
-             }
-           } else if (data.currentPresenterName === "End of Queue" || (data.presenterQueue.length > 0 && data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= data.presenterQueue.length) ) {
-             if(presenterQueueInput.trim() !== '') setPresenterQueueInput(''); 
-           }
-        }
-
-
         if (data.sessionEnded) {
           if (data.sessionType === 'quick' && !data.isPermanentlySaved) {
             setError("This quick session has ended and was likely removed.");
-            // It might have been deleted by another admin instance, or this client is stale.
-            // Redirect if this client is still on the page.
             setTimeout(() => {
                 if (pathname === `/session/${sessionId}`) router.push('/');
             }, 3000);
@@ -186,7 +164,7 @@ export default function SessionPage() {
       setHasSubmittedNickname(false);
     });
     return () => unsubscribeFirestore();
-  }, [sessionId, router, toast, authUser, authLoading, isCurrentUserAdmin, hasSubmittedNickname, presenterQueueInput, isProcessingAdminAction, pathname]);
+  }, [sessionId, router, toast, authUser, authLoading, hasSubmittedNickname, pathname]);
 
 
   useEffect(() => {
@@ -215,7 +193,6 @@ export default function SessionPage() {
       toast({ title: "Nickname Immutable", description: "Your nickname cannot be changed for this session.", variant: "destructive" });
       return;
     }
-
 
     setIsSavingNickname(true);
     try {
@@ -318,7 +295,7 @@ export default function SessionPage() {
         const sessionDocRef = doc(db, 'sessions', sessionId);
         await updateDoc(sessionDocRef, { isPermanentlySaved: !sessionData!.isPermanentlySaved });
       },
-      `Session is now ${!sessionData!.isPermanentlySaved ? "permanently saved" : "set for potential auto-deletion after 30 days (if applicable)"}.`,
+      `Session is now ${!sessionData!.isPermanentlySaved ? "permanently saved" : "set for potential auto-deletion (if applicable)"}.`,
       "Could not update session save status."
     );
 
@@ -338,12 +315,10 @@ export default function SessionPage() {
     const sessionDocRef = doc(db, 'sessions', sessionId);
     setIsProcessingAdminAction(true);
 
-    // If it's a "quick" session and NOT marked as permanently saved, delete it.
     if (sessionData.sessionType === 'quick' && !sessionData.isPermanentlySaved) {
         try {
             await deleteDoc(sessionDocRef);
             toast({ title: "Quick Session Ended & Deleted", description: "The session has been removed. Admin is redirecting..." });
-            // No need to update local sessionData state as it will be gone
             if (pathname && pathname.startsWith(`/session/${sessionId}`)) {
                 router.push('/');
             }
@@ -353,38 +328,34 @@ export default function SessionPage() {
             if (error instanceof FirestoreError) errorMessageText = `Could not delete quick session: ${error.message} (Code: ${error.code})`;
             else if (error instanceof Error) errorMessageText = `Could not delete quick session: ${error.message}`;
             toast({ title: "Error Ending Session", description: errorMessageText, variant: "destructive" });
-            // Fallback: try to mark as ended if delete failed, so it's not stuck.
             try { await updateDoc(sessionDocRef, { sessionEnded: true, isRoundActive: false }); } catch (e) { console.error("Fallback end failed", e); }
         } finally {
             setIsProcessingAdminAction(false);
             setShowEndSessionDialog(false);
         }
     } else {
-        // For account sessions or permanently saved quick sessions, mark as ended and update scores
         try {
             const updatePayload: any = {
                 sessionEnded: true,
                 isRoundActive: false
             };
 
-            if (!sessionData.sessionEnded) { // Only update scores if it wasn't already ended
-                if (
-                    sessionData.currentPresenterName &&
-                    sessionData.currentPresenterName !== "End of Queue" &&
-                    sessionData.presenterQueue && sessionData.presenterQueue.length > 0 &&
-                    sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex >= 0 && sessionData.currentPresenterIndex < sessionData.presenterQueue.length
-                ) {
-                    const currentPresenterDetails = sessionData.presenterQueue[sessionData.currentPresenterIndex];
+            if (!sessionData.sessionEnded) {
+                const currentPresenter = (sessionData.currentPresenterIndex >= 0 && sessionData.presenterQueue[sessionData.currentPresenterIndex]) 
+                                         ? sessionData.presenterQueue[sessionData.currentPresenterIndex] 
+                                         : null;
+
+                if (currentPresenter) {
                     const finalScore: PresenterScore = {
-                        name: currentPresenterDetails.name,
-                        uid: currentPresenterDetails.uid || null,
+                        name: currentPresenter.name,
+                        uid: currentPresenter.uid || null,
                         likes: sessionData.likeClicks,
                         dislikes: sessionData.dislikeClicks,
                         netScore: sessionData.likeClicks - sessionData.dislikeClicks,
                     };
                     updatePayload.presenterScores = arrayUnion(finalScore);
                     await updateDoc(sessionDocRef, updatePayload);
-                    toast({ title: "Session Ended", description: `Final scores for ${currentPresenterDetails.name} recorded. Admin is redirecting...` });
+                    toast({ title: "Session Ended", description: `Final scores for ${currentPresenter.name} recorded. Admin is redirecting...` });
                 } else {
                     await updateDoc(sessionDocRef, updatePayload);
                     toast({ title: "Session Ended", description: "The session has been closed. Admin is redirecting..." });
@@ -393,7 +364,6 @@ export default function SessionPage() {
                 toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
             }
             
-            // Update local state to reflect ended session immediately if it wasn't deleted
             setSessionData(prev => prev ? {...prev, sessionEnded: true, isRoundActive: false} : null);
 
             if (pathname && pathname.startsWith(`/session/${sessionId}`)) {
@@ -412,127 +382,6 @@ export default function SessionPage() {
     }
   };
 
-  const handleSetPresenterQueue = () =>
-    handleAdminAction(
-        async () => {
-            const nameLines = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name.length > 0);
-            
-            const participantNicknameToUidMap = new Map<string, string>();
-            Object.entries(sessionData?.participants || {}).forEach(([uid, pData]) => {
-                participantNicknameToUidMap.set(pData.nickname.toLowerCase(), uid);
-            });
-
-            const newQueue: PresenterEntry[] = nameLines.map(name => {
-                const matchedUid = participantNicknameToUidMap.get(name.toLowerCase());
-                return { name, uid: matchedUid || null };
-            });
-
-            const sessionDocRef = doc(db, 'sessions', sessionId);
-
-            let newPresenterName = "";
-            let newPresenterUid: string | null = null;
-            let newPresenterIndex = -1;
-            let roundActive = false;
-
-            if (newQueue.length > 0) {
-                newPresenterName = newQueue[0].name;
-                newPresenterUid = newQueue[0].uid || null;
-                newPresenterIndex = 0;
-                roundActive = true;
-            }
-
-            await updateDoc(sessionDocRef, {
-                presenterQueue: newQueue,
-                currentPresenterIndex: newPresenterIndex,
-                currentPresenterName: newPresenterName,
-                currentPresenterUid: newPresenterUid,
-                likeClicks: 0,
-                dislikeClicks: 0,
-                isRoundActive: roundActive,
-                presenterScores: [], 
-            });
-        },
-        presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name.length > 0).length > 0
-            ? "Presenter list updated. Scores reset. Round started for the first presenter. Overall leaderboard reset."
-            : "Presenter list cleared. Scores reset. Round closed. Overall leaderboard reset.",
-        "Could not update presenter list."
-    );
-
-  const handleNextPresenter = () =>
-    handleAdminAction(
-        async () => {
-            if (!sessionData || !sessionData.presenterQueue || sessionData.presenterQueue.length === 0) {
-                toast({ title: "No Presenters Set", description: "The presenter list is empty. Please add presenters first.", variant: "default" });
-                return;
-            }
-            const sessionDocRef = doc(db, 'sessions', sessionId);
-            
-            const { 
-                currentPresenterName: currentPresenterNameFromState,
-                currentPresenterUid: currentPresenterUidFromState,
-                likeClicks: currentLikesFromState, 
-                dislikeClicks: currentDislikesFromState,
-                currentPresenterIndex: currentIndexFromState = -1,
-                presenterQueue: currentQueueFromState = [],
-            } = sessionData;
-
-            const updatePayload: any = {
-                likeClicks: 0,
-                dislikeClicks: 0,
-            }; 
-            let scoreRecordedMessage = "";
-            
-            if (currentPresenterNameFromState && 
-                currentPresenterNameFromState !== "End of Queue" && 
-                currentIndexFromState >= 0 && 
-                currentIndexFromState < currentQueueFromState.length) {
-
-                const scoreToRecord: PresenterScore = {
-                    name: currentPresenterNameFromState,
-                    uid: currentPresenterUidFromState || null, 
-                    likes: currentLikesFromState,
-                    dislikes: currentDislikesFromState,
-                    netScore: currentLikesFromState - currentDislikesFromState,
-                };
-                updatePayload.presenterScores = arrayUnion(scoreToRecord);
-                scoreRecordedMessage = `Scores for ${currentPresenterNameFromState} (Likes: ${currentLikesFromState}, Dislikes: ${currentDislikesFromState}) recorded.`;
-            }
-            
-            const newIndex = currentIndexFromState + 1;
-            updatePayload.currentPresenterIndex = newIndex;
-
-            let remainingPresentersText = '';
-            if (newIndex >= currentQueueFromState.length) { 
-                updatePayload.isRoundActive = false;
-                updatePayload.currentPresenterName = "End of Queue";
-                updatePayload.currentPresenterUid = null; 
-            } else { 
-                const nextPresenter = currentQueueFromState[newIndex];
-                updatePayload.currentPresenterName = nextPresenter.name;
-                updatePayload.currentPresenterUid = nextPresenter.uid || null;
-                updatePayload.isRoundActive = true;
-                remainingPresentersText = currentQueueFromState.slice(newIndex).map(p => p.name).join('\n');
-            }
-            
-            setPresenterQueueInput(remainingPresentersText); // Update textarea here
-            await updateDoc(sessionDocRef, updatePayload);
-
-            let toastTitle = "Next Feedback Round";
-            let toastDescription = `${scoreRecordedMessage}`;
-
-            if (newIndex >= currentQueueFromState.length) {
-                 toastTitle = "End of Presenter Queue";
-                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}You have reached the end of the presenter list. Feedback round closed.`;
-            } else {
-                 toastDescription += `${scoreRecordedMessage ? ' ' : ''}Now presenting: ${currentQueueFromState[newIndex].name}. Scores reset, feedback round started.`;
-            }
-             if (scoreRecordedMessage) toastDescription += " Overall leaderboard updated.";
-             toast({ title: toastTitle, description: toastDescription, variant: "default" });
-        },
-        "", 
-        "Could not advance to the next feedback round."
-    );
-
   const triggerKickParticipantDialog = (uid: string, nickname: string) => {
     if (!isCurrentUserAdmin || isProcessingAdminAction || authUser?.uid === uid) return;
     setParticipantToKick({ uid, nickname });
@@ -544,9 +393,40 @@ export default function SessionPage() {
     handleAdminAction(
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
-        await updateDoc(sessionDocRef, {
+        // Also remove from presenterQueue if they are in it
+        const batch = writeBatch(db);
+        batch.update(sessionDocRef, {
           [`participants.${participantToKick.uid}`]: deleteField()
         });
+
+        if (sessionData?.presenterQueue && sessionData.presenterQueue.some(p => p.participantId === participantToKick.uid)) {
+            const newQueue = sessionData.presenterQueue.filter(p => p.participantId !== participantToKick.uid);
+            let newIndex = sessionData.currentPresenterIndex;
+            
+            // Adjust currentPresenterIndex if the kicked user was before or at the current index
+            if (sessionData.currentPresenterIndex >=0 && sessionData.presenterQueue.length > 0) {
+                const kickedUserIndexInQueue = sessionData.presenterQueue.findIndex(p => p.participantId === participantToKick.uid);
+                if (kickedUserIndexInQueue !== -1 && kickedUserIndexInQueue <= sessionData.currentPresenterIndex) {
+                    newIndex = sessionData.currentPresenterIndex - 1; // Decrement if kicked user was at or before current
+                }
+            }
+            // If the kicked user was the current presenter, and was the last in newQueue, it's end of queue
+            const currentPresenter = sessionData.presenterQueue[sessionData.currentPresenterIndex];
+            if (currentPresenter?.participantId === participantToKick.uid && newIndex >= newQueue.length -1 && newQueue.length > 0) {
+                 // No, if current presenter is kicked, newIndex should point to next, or if no next, then -1 or end of queue
+            } else if (currentPresenter?.participantId === participantToKick.uid && newIndex < 0 && newQueue.length === 0){
+                 newIndex = -1; // No presenters left
+            }
+
+
+            batch.update(sessionDocRef, { presenterQueue: newQueue });
+            // If the kicked user *was* the current presenter, we might need to advance or reset.
+            // For simplicity now, we just remove them. Admin might need to manually advance.
+            // More complex logic would be to auto-advance if current presenter is kicked.
+            // This could involve resetting scores if they were active.
+             toast({title: "Participant Kicked", description: `Participant "${participantToKick.nickname}" also removed from presenter queue if present.`})
+        }
+        await batch.commit();
       },
       `Participant "${participantToKick.nickname}" has been kicked.`,
       `Could not kick participant "${participantToKick.nickname}".`
@@ -556,6 +436,139 @@ export default function SessionPage() {
     });
   };
 
+  const handleAddParticipantToQueue = (participantEntry: ParticipantData) => {
+    if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) return;
+    const { nickname, uid: participantId } = participantEntry; // uid here is the key from participants map
+    const actualAccountUid = authUser?.isAnonymous === false && authUser?.uid === participantId ? authUser.uid : null;
+
+    const newPresenter: PresenterEntry = { name: nickname, uid: actualAccountUid, participantId: participantId };
+
+    handleAdminAction(async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, {
+            presenterQueue: arrayUnion(newPresenter)
+        });
+    }, `${nickname} added to presenter queue.`, `Could not add ${nickname} to queue.`);
+  };
+
+  const handleRemovePresenterFromQueue = (indexToRemove: number) => {
+     if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded || !sessionData.presenterQueue) return;
+     const presenterToRemove = sessionData.presenterQueue[indexToRemove];
+     if (!presenterToRemove) return;
+
+     handleAdminAction(async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        let newIndex = sessionData.currentPresenterIndex;
+        let newQueue = sessionData.presenterQueue.filter((_, i) => i !== indexToRemove);
+
+        if (indexToRemove < sessionData.currentPresenterIndex) {
+            newIndex = sessionData.currentPresenterIndex - 1;
+        } else if (indexToRemove === sessionData.currentPresenterIndex) {
+            // If current presenter is removed, reset votes and stay at this index (which will now point to next or end)
+            // Or, if it makes it out of bounds, set to end of queue or last valid
+            newIndex = Math.min(sessionData.currentPresenterIndex, newQueue.length -1);
+            if (newQueue.length === 0) newIndex = -1;
+            // If current presenter removed, also reset votes
+            await updateDoc(sessionDocRef, {
+                presenterQueue: newQueue,
+                currentPresenterIndex: newIndex,
+                likeClicks: 0,
+                dislikeClicks: 0,
+                isRoundActive: newQueue.length > 0 && newIndex !== -1 && newIndex < newQueue.length // Only active if valid presenter
+            });
+            return; // Exit early as update is done
+        }
+         await updateDoc(sessionDocRef, {
+             presenterQueue: newQueue,
+             currentPresenterIndex: newIndex // Adjust index if needed
+         });
+     }, `${presenterToRemove.name} removed from queue.`, `Could not remove ${presenterToRemove.name}.`);
+  };
+
+  const handleClearPresenterQueue = () => {
+    handleAdminAction(async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, {
+            presenterQueue: [],
+            currentPresenterIndex: -1,
+            likeClicks: 0,
+            dislikeClicks: 0,
+            isRoundActive: true, // General feedback becomes active
+            presenterScores: [] // Clear overall scores too
+        });
+    }, "Presenter queue cleared. Scores reset. Overall leaderboard cleared.", "Could not clear presenter queue.");
+  };
+
+  const handleSetVotingMode = (mode: 'single' | 'infinite') => {
+    handleAdminAction(async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, { votingMode: mode });
+    }, `Voting mode set to ${mode === 'single' ? 'Single Vote per Round' : 'Infinite Votes per Round'}.`, "Could not set voting mode.");
+  };
+  
+  const handleStartNextFeedbackRound = () => {
+    if (!isCurrentUserAdmin || !sessionData || !sessionData.presenterQueue || sessionData.presenterQueue.length === 0) {
+        toast({ title: "Action Failed", description: "Presenter queue is empty.", variant: "destructive" });
+        return;
+    }
+    handleAdminAction(async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        const { currentPresenterIndex, presenterQueue, likeClicks, dislikeClicks, presenterScores = [] } = sessionData;
+        const updatePayload: any = { likeClicks: 0, dislikeClicks: 0 };
+        let toastDescription = "";
+
+        if (currentPresenterIndex >= 0 && currentPresenterIndex < presenterQueue.length) {
+            const currentPres = presenterQueue[currentPresenterIndex];
+            const scoreToRecord: PresenterScore = {
+                name: currentPres.name,
+                uid: currentPres.uid || null,
+                likes: likeClicks,
+                dislikes: dislikeClicks,
+                netScore: likeClicks - dislikeClicks,
+            };
+            updatePayload.presenterScores = arrayUnion(scoreToRecord);
+            toastDescription += `Scores for ${currentPres.name} (Likes: ${likeClicks}, Dislikes: ${dislikeClicks}) recorded. `;
+        }
+
+        const newIndex = currentPresenterIndex + 1;
+        if (newIndex >= presenterQueue.length) {
+            updatePayload.currentPresenterIndex = newIndex; // Mark as past the end
+            updatePayload.isRoundActive = false;
+            toastDescription += "End of presenter queue. Feedback round closed.";
+        } else {
+            updatePayload.currentPresenterIndex = newIndex;
+            updatePayload.isRoundActive = true;
+            toastDescription += `Now presenting: ${presenterQueue[newIndex].name}. Feedback round started.`;
+        }
+        await updateDoc(sessionDocRef, updatePayload);
+        // Success message handled by handleAdminAction if toastDescription is passed
+    }, 
+    // This will be dynamically generated by the logic above if successful
+    "", 
+    "Could not start next feedback round.");
+  };
+
+  const handleResetCurrentPresenterVotes = () => {
+    if (!isCurrentUserAdmin || !sessionData || sessionData.currentPresenterIndex < 0 || !sessionData.presenterQueue || sessionData.currentPresenterIndex >= sessionData.presenterQueue.length) {
+        toast({ title: "Action Failed", description: "No active presenter in the queue.", variant: "destructive" });
+        return;
+    }
+    handleAdminAction(async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, { likeClicks: 0, dislikeClicks: 0 });
+    }, `Votes for current presenter (${sessionData.presenterQueue[sessionData.currentPresenterIndex].name}) have been reset.`, "Could not reset current presenter votes.");
+  };
+
+  const handleResetGeneralSessionVotes = () => {
+     if (!isCurrentUserAdmin || !sessionData || (sessionData.presenterQueue && sessionData.presenterQueue.length > 0)) {
+        toast({ title: "Action Failed", description: "This action is for general feedback mode (empty presenter queue).", variant: "destructive" });
+        return;
+    }
+    handleAdminAction(async () => {
+        const sessionDocRef = doc(db, 'sessions', sessionId);
+        await updateDoc(sessionDocRef, { likeClicks: 0, dislikeClicks: 0 });
+    }, "General session votes have been reset.", "Could not reset general session votes.");
+  };
 
   if (authLoading || (isLoadingSession && !sessionData)) { 
     return (
@@ -667,26 +680,20 @@ export default function SessionPage() {
   }
 
   const { 
-    presenterQueue: presenterQueueFromData, 
-    currentPresenterIndex: currentPresenterIdxFromData, 
-    currentPresenterName: currentPresenterNameFromData,
-    currentPresenterUid: currentPresenterUidFromData,
+    presenterQueue = [], 
+    currentPresenterIndex = -1,
+    votingMode = 'single'
   } = sessionData;
 
-  const isPresenterQueueAvailableAndNotEmpty = !!(presenterQueueFromData && presenterQueueFromData.length > 0);
+  const currentPresenterDetails = (currentPresenterIndex >= 0 && currentPresenterIndex < presenterQueue.length)
+                                  ? presenterQueue[currentPresenterIndex]
+                                  : null;
+  const currentPresenterNameForDisplay = currentPresenterDetails ? currentPresenterDetails.name : null;
 
-  const isSpecificPresenterActive =
-    isPresenterQueueAvailableAndNotEmpty &&
-    typeof currentPresenterIdxFromData === 'number' &&
-    currentPresenterIdxFromData >= 0 &&
-    currentPresenterIdxFromData < (presenterQueueFromData?.length ?? 0) &&
-    !!currentPresenterNameFromData && 
-    currentPresenterNameFromData !== "End of Queue";
+  const isPresenterQueueActive = presenterQueue.length > 0 && currentPresenterIndex >= 0 && currentPresenterIndex < presenterQueue.length;
+  const isEndOfQueue = presenterQueue.length > 0 && currentPresenterIndex >= presenterQueue.length;
 
-
-  const canSubmitFeedbackGeneric = sessionData.isRoundActive === true && !sessionData.sessionEnded;
-  const feedbackSubmissionAllowed = !!(canSubmitFeedbackGeneric && (isPresenterQueueAvailableAndNotEmpty ? isSpecificPresenterActive : true));
-
+  const feedbackSubmissionAllowed = !!(sessionData.isRoundActive && !sessionData.sessionEnded && (isPresenterQueueActive || presenterQueue.length === 0));
 
   const copySessionCode = () => {
     if (!sessionId) return;
@@ -695,8 +702,8 @@ export default function SessionPage() {
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
-  const participantList = Object.entries(sessionData.participants || {})
-    .map(([uid, data]) => ({ uid, nickname: data.nickname, joinedAt: data.joinedAt }))
+  const participantListForAdmin = Object.entries(sessionData.participants || {})
+    .map(([uid_key, data]) => ({ id: uid_key, ...data })) // id is the key from participants map
     .sort((a, b) => {
         const timeAValue = a.joinedAt;
         const timeBValue = b.joinedAt;
@@ -709,54 +716,30 @@ export default function SessionPage() {
   
   let sessionStatusMessage = "";
   let presenterDisplayMessage = "";
-  let currentPresenterInfoForDisplay = "";
 
 
-  if (currentPresenterNameFromData === "End of Queue") {
-    currentPresenterInfoForDisplay = "End of Queue";
-  } else if (isSpecificPresenterActive && presenterQueueFromData && typeof currentPresenterIdxFromData === 'number') {
-    const totalPresenters = presenterQueueFromData.length;
-    const currentIndexHuman = currentPresenterIdxFromData + 1;
-    currentPresenterInfoForDisplay = `${currentPresenterNameFromData} (${currentIndexHuman} of ${totalPresenters})`;
-  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1 && presenterQueueFromData && presenterQueueFromData.length > 0) {
-    currentPresenterInfoForDisplay = `Queue ready (${presenterQueueFromData.length} presenter${presenterQueueFromData.length === 1 ? '' : 's'})`;
-  } else {
-    currentPresenterInfoForDisplay = "N/A";
+  if (isEndOfQueue) {
+    presenterDisplayMessage = "Presenter queue finished.";
+    sessionStatusMessage = "Feedback round is CLOSED.";
+  } else if (currentPresenterDetails) {
+    const totalPresenters = presenterQueue.length;
+    const currentIndexHuman = currentPresenterIndex + 1;
+    presenterDisplayMessage = `Now Presenting: ${currentPresenterDetails.name} (${currentIndexHuman} of ${totalPresenters})`;
+    sessionStatusMessage = sessionData.isRoundActive ? "Feedback round is OPEN. Cast your vote!" : "Feedback round is PAUSED.";
+  } else if (presenterQueue.length > 0 && currentPresenterIndex === -1) {
+    presenterDisplayMessage = `Queue ready (${presenterQueue.length} presenter${presenterQueue.length === 1 ? '' : 's'}). Admin can start.`
+    sessionStatusMessage = "Waiting for admin to start presentations."
   }
-
-
-  if (isSpecificPresenterActive) {
-      presenterDisplayMessage = `Now Presenting: ${currentPresenterNameFromData}`;
-      sessionStatusMessage = sessionData.isRoundActive ? "Feedback round is OPEN for the current presenter. Cast your vote!" : "Feedback round is PAUSED for the current presenter.";
-  } else if (currentPresenterNameFromData === "End of Queue") {
-      presenterDisplayMessage = "Presenter queue finished.";
-      sessionStatusMessage = "Feedback round is CLOSED.";
-  } else if (isPresenterQueueAvailableAndNotEmpty && currentPresenterIdxFromData === -1) {
-      presenterDisplayMessage = "Presenter queue is set.";
-      sessionStatusMessage = isCurrentUserAdmin ?
-          (sessionData.isRoundActive ? "General feedback round is OPEN. You can also start the presentations." : "Admin can start the presentations or open a general feedback round.") :
-          (sessionData.isRoundActive ? "General feedback round is OPEN." : "Waiting for admin to start presentations or open a general round.");
-  } else { 
-      presenterDisplayMessage = isCurrentUserAdmin ? "No presenter list. Run a general feedback round or add presenters." : "General feedback session.";
-      sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is PAUSED.";
+  else { // General feedback mode
+    presenterDisplayMessage = isCurrentUserAdmin ? "General feedback. Add presenters or reset votes." : "General feedback session.";
+    sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is PAUSED.";
   }
-
-
-  const disablePauseResumeButton = isProcessingAdminAction || (currentPresenterNameFromData === "End of Queue" && !sessionData.isRoundActive);
-
-  const nextFeedbackRoundButtonDisabled = isProcessingAdminAction ||
-                                   !isPresenterQueueAvailableAndNotEmpty ||
-                                   currentPresenterNameFromData === "End of Queue" || 
-                                   (currentPresenterIdxFromData === -1 && !sessionData.isRoundActive && !isCurrentUserAdmin && !sessionData.sessionEnded); 
 
   const selfNickname = authUser ? sessionData?.participants?.[authUser.uid]?.nickname : undefined;
   const isSelfPresenter = !!(
       authUser &&
-      currentPresenterNameFromData &&
-      selfNickname &&
-      currentPresenterNameFromData === selfNickname &&
-      currentPresenterNameFromData !== "End of Queue" &&
-      currentPresenterUidFromData === authUser.uid 
+      currentPresenterDetails &&
+      currentPresenterDetails.participantId === authUser.uid 
   );
   
   const isOverallLeaderboardVisibleToUser = sessionData.resultsVisible || isCurrentUserAdmin;
@@ -771,7 +754,6 @@ export default function SessionPage() {
     sessionData.sessionEnded &&
     sessionData.presenterScores && 
     sessionData.presenterScores.length > 0;
-
 
   return (
     <main className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
@@ -805,14 +787,14 @@ export default function SessionPage() {
                 </div>
             </div>
             {presenterDisplayMessage && (
-                <p className={`text-xl md:text-2xl font-semibold ${isSpecificPresenterActive ? 'text-accent' : 'text-muted-foreground'}`}>{presenterDisplayMessage}</p>
+                <p className={`text-xl md:text-2xl font-semibold ${currentPresenterDetails ? 'text-accent' : 'text-muted-foreground'}`}>{presenterDisplayMessage}</p>
             )}
             <p className="text-md sm:text-lg text-muted-foreground mt-1">
                 {sessionStatusMessage}
             </p>
              {!sessionData.sessionEnded && !feedbackSubmissionAllowed && sessionData.isRoundActive && (
                 <p className="text-sm text-orange-500 mt-1">
-                    Submissions (votes) are paused until the admin selects an active presenter or if the queue has ended.
+                    Submissions (votes) are currently disabled.
                 </p>
             )}
         </div>
@@ -824,6 +806,7 @@ export default function SessionPage() {
                     isRoundActive={!!feedbackSubmissionAllowed}
                     soundsEnabled={sessionData.soundsEnabled}
                     roundId={sessionData?.currentPresenterIndex ?? -1}
+                    votingMode={sessionData.votingMode}
                 />
             </div>
         )}
@@ -840,8 +823,8 @@ export default function SessionPage() {
                     likeClicks={sessionData.likeClicks}
                     dislikeClicks={sessionData.dislikeClicks}
                     resultsVisible={sessionData.resultsVisible}
-                    currentPresenterName={isSpecificPresenterActive ? currentPresenterNameFromData : (currentPresenterNameFromData === "End of Queue" ? "End of Queue" : null)}
-                    presenterQueueEmpty={!isPresenterQueueAvailableAndNotEmpty}
+                    currentPresenterName={currentPresenterNameForDisplay}
+                    presenterQueueEmpty={presenterQueue.length === 0}
                     isCurrentPresenterSelf={isSelfPresenter}
                 />
                  {showLiveOverallLeaderboard && (
@@ -855,35 +838,53 @@ export default function SessionPage() {
             <section className={cn(
                 "space-y-4 md:col-span-5" 
             )}>
-                 {(participantList.length > 0 ) && (
+                 {(participantListForAdmin.length > 0 ) && (
                     <Card className="w-full shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-xl font-bold flex items-center justify-center">
-                            <Users className="mr-2 h-5 w-5" /> Participants ({participantList.length})
+                            <Users className="mr-2 h-5 w-5" /> Participants ({participantListForAdmin.length})
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <ScrollArea className="h-40">
                             <ul className="space-y-1">
-                                {participantList.map(p => (
-                                <li key={p.uid} className={`flex justify-between items-center p-1 text-xs hover:bg-muted/50 dark:hover:bg-muted/70 rounded ${authUser?.uid === p.uid ? 'font-bold text-primary bg-primary/10' : ''}`}>
+                                {participantListForAdmin.map(p => (
+                                <li key={p.id} className={`flex justify-between items-center p-1 text-xs hover:bg-muted/50 dark:hover:bg-muted/70 rounded ${authUser?.uid === p.id ? 'font-bold text-primary bg-primary/10' : ''}`}>
                                     <span>{p.nickname || 'Anonymous User'}</span>
-                                    {isCurrentUserAdmin && authUser?.uid !== p.uid && !sessionData.sessionEnded && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-6 px-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                                    onClick={() => triggerKickParticipantDialog(p.uid, p.nickname || 'Anonymous User')}
-                                                    disabled={isProcessingAdminAction}
-                                                >
-                                                    <UserX className="mr-1 h-3 w-3"/> Kick
-                                                </Button>
-                                            </TooltipTrigger>
-                                            <TooltipContent><p>Remove {p.nickname || 'this user'} from session</p></TooltipContent>
-                                        </Tooltip>
-                                    )}
+                                    <div className="flex items-center space-x-1">
+                                        {isCurrentUserAdmin && !sessionData.sessionEnded && (
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-6 px-1.5 text-primary hover:text-primary hover:bg-primary/10"
+                                                        onClick={() => handleAddParticipantToQueue(p)}
+                                                        disabled={isProcessingAdminAction || presenterQueue.some(pq => pq.participantId === p.id)}
+                                                    >
+                                                        <ListPlus className="mr-1 h-3 w-3"/> Add to Queue
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent><p>Add {p.nickname || 'this user'} to presenter queue</p></TooltipContent>
+                                            </Tooltip>
+                                        )}
+                                        {isCurrentUserAdmin && authUser?.uid !== p.id && !sessionData.sessionEnded && (
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                        onClick={() => triggerKickParticipantDialog(p.id, p.nickname || 'Anonymous User')}
+                                                        disabled={isProcessingAdminAction}
+                                                    >
+                                                        <UserX className="mr-1 h-3 w-3"/> Kick
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent><p>Remove {p.nickname || 'this user'} from session</p></TooltipContent>
+                                            </Tooltip>
+                                        )}
+                                    </div>
                                 </li>
                                 ))}
                             </ul>
@@ -897,93 +898,103 @@ export default function SessionPage() {
                     <Card className="shadow-lg">
                         <CardHeader>
                             <CardTitle className="text-lg font-semibold flex items-center">
-                                <ListChecks className="mr-2 h-5 w-5 text-primary" />
-                                Presenter & Round Management
+                                <ListOrdered className="mr-2 h-5 w-5 text-primary" />
+                                Presenter Queue Management
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div>
-                                <Label htmlFor="presenter-queue-input" className="text-sm font-medium">Presenter List</Label>
-                                <Tooltip>
-                                    <TooltipTrigger asChild><Button variant="ghost" size="icon" className="ml-1 h-6 w-6 align-middle"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
-                                    <TooltipContent side="top" align="start"><p className="max-w-xs">Enter one presenter name per line. If a name matches a participant's nickname, their account will be linked. Click 'Set/Update' to apply. This resets scores and starts the round for the first presenter or clears the queue.</p></TooltipContent>
-                                </Tooltip>
-                                <Textarea
-                                    id="presenter-queue-input"
-                                    placeholder="Enter presenter names, one per line..."
-                                    value={presenterQueueInput}
-                                    onChange={(e) => setPresenterQueueInput(e.target.value)}
-                                    rows={3}
-                                    disabled={isProcessingAdminAction}
-                                    className="mt-1"
-                                />
-                            </div>
-
-                            {participantList.length > 0 && (
-                                <details className="group">
-                                    <summary className="flex items-center cursor-pointer text-sm font-medium text-primary hover:underline">
-                                        <ListPlus className="mr-2 h-4 w-4" />
-                                        Add from Participants to Queue
-                                        <span className="ml-1 text-muted-foreground text-xs">(click to expand)</span>
-                                    </summary>
-                                    <ScrollArea className="mt-2 h-32 border rounded-md p-2 bg-muted/30 dark:bg-muted/50 group-open:animate-accordion-down">
+                            {presenterQueue.length > 0 ? (
+                                <>
+                                    <ScrollArea className="h-32 border rounded-md p-2 bg-muted/30 dark:bg-muted/50">
                                         <ul className="space-y-1">
-                                            {participantList.map(p => (
-                                                <li key={`add-${p.uid}`} className="flex justify-between items-center text-xs p-1 hover:bg-muted/50 dark:hover:bg-muted/70 rounded">
-                                                    <span>{p.nickname || 'Anonymous User'}</span>
+                                            {presenterQueue.map((p, index) => (
+                                                <li key={`${p.participantId}-${index}`} 
+                                                    className={cn("flex justify-between items-center text-xs p-1.5 rounded",
+                                                                index === currentPresenterIndex && "bg-primary/20 font-semibold")}>
+                                                    <span>{index + 1}. {p.name}</span>
                                                     <Button
-                                                        variant="outline"
-                                                        size="sm" 
-                                                        onClick={() => {
-                                                            const currentQueueNames = presenterQueueInput.split('\n').map(name => name.trim()).filter(name => name !== '');
-                                                            if (p.nickname && !currentQueueNames.includes(p.nickname)) {
-                                                                setPresenterQueueInput(prev => `${prev.trim()}\n${p.nickname}`.trim());
-                                                                toast({ title: "Added to Text Area", description: `${p.nickname} added. Click 'Set/Update' to finalize.` });
-                                                            } else if (!p.nickname) {
-                                                                toast({ title: "Cannot Add", description: `Participant has no nickname.`, variant: "destructive"});
-                                                            } else {
-                                                                toast({ title: "Already in List", description: `${p.nickname} is already in the text area.`});
-                                                            }
-                                                        }}
-                                                        disabled={isProcessingAdminAction || !p.nickname}
-                                                        className="h-6 px-1.5 text-xs"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                        onClick={() => handleRemovePresenterFromQueue(index)}
+                                                        disabled={isProcessingAdminAction}
                                                     >
-                                                        <UserPlusIcon className="mr-1 h-3 w-3"/> Add
+                                                        <ListX className="mr-1 h-3 w-3"/> Remove
                                                     </Button>
                                                 </li>
                                             ))}
                                         </ul>
                                     </ScrollArea>
-                                </details>
+                                    <Button onClick={handleClearPresenterQueue} variant="outline" size="sm" className="w-full text-destructive border-destructive hover:bg-destructive/10" disabled={isProcessingAdminAction}>
+                                        <ListX className="mr-2 h-4 w-4"/> Clear Entire Queue & Scores
+                                    </Button>
+                                </>
+                            ) : (
+                                <p className="text-sm text-muted-foreground text-center py-2">
+                                    Presenter queue is empty. Add participants to the queue using the list above.
+                                </p>
                             )}
-                            <div className="flex flex-col gap-2">
-                                <Button onClick={handleSetPresenterQueue} variant="outline" className="w-full text-sm" disabled={isProcessingAdminAction}>
-                                    Set/Update Presenter List
-                                </Button>
+                        </CardContent>
+                    </Card>
+                    
+                    <Card className="shadow-lg">
+                        <CardHeader>
+                            <CardTitle className="text-lg font-semibold flex items-center">
+                                <ListChecks className="mr-2 h-5 w-5 text-primary" />
+                                Round Controls
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                           {presenterQueue.length > 0 ? (
+                                <>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                onClick={handleStartNextFeedbackRound} 
+                                                className="w-full text-sm bg-primary hover:bg-primary/90"
+                                                disabled={isProcessingAdminAction || isEndOfQueue}
+                                            >
+                                                <ChevronsRight className="mr-1 h-4 w-4"/> 
+                                                {currentPresenterIndex === -1 ? "Start First Presenter" : (isEndOfQueue ? "Queue Finished" : "Next Feedback Round")}
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent><p>{currentPresenterIndex === -1 ? "Start with the first presenter in the queue." : (isEndOfQueue ? "All presenters finished." : "Record current scores, advance to next presenter, reset votes.")}</p></TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                onClick={handleResetCurrentPresenterVotes}
+                                                variant="outline"
+                                                className="w-full text-sm"
+                                                disabled={isProcessingAdminAction || !currentPresenterDetails}
+                                            >
+                                                <RotateCcw className="mr-2 h-4 w-4" /> Reset Current Presenter's Votes
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent><p>Reset like/dislike counts for the current presenter without advancing. Does not affect overall scores.</p></TooltipContent>
+                                    </Tooltip>
+                                </>
+                           ) : (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <Button
-                                            onClick={handleNextPresenter} 
-                                            className="w-full text-sm bg-primary hover:bg-primary/90"
-                                            disabled={nextFeedbackRoundButtonDisabled}
+                                            onClick={handleResetGeneralSessionVotes}
+                                            variant="outline"
+                                            className="w-full text-sm"
+                                            disabled={isProcessingAdminAction}
                                         >
-                                            Next Feedback Round <ChevronsRight className="ml-1 h-4 w-4"/>
+                                            <RotateCcw className="mr-2 h-4 w-4" /> Reset General Session Votes
                                         </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent><p>Advance to the next presenter. Records current scores, resets for next.</p></TooltipContent>
+                                    <TooltipContent><p>Reset like/dislike counts for the current general feedback session.</p></TooltipContent>
                                 </Tooltip>
-                            </div>
-                             {isPresenterQueueAvailableAndNotEmpty && (
-                                <p className="text-xs text-muted-foreground">
-                                    Current: {currentPresenterInfoForDisplay}
-                                </p>
-                            )}
+                           )}
                             <div className="flex items-center space-x-2 pt-2">
                                 <Button
                                     onClick={handleTogglePauseResumeFeedback}
                                     variant="outline"
                                     className="flex-1 text-sm"
-                                    disabled={disablePauseResumeButton}
+                                    disabled={isProcessingAdminAction || isEndOfQueue}
                                 >
                                 {sessionData.isRoundActive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
                                 {sessionData.isRoundActive ? 'Pause Feedback' : 'Resume Feedback'}
@@ -1007,6 +1018,28 @@ export default function SessionPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                            <div>
+                                <Label className="text-sm font-medium mb-1 block">Voting Mode</Label>
+                                <RadioGroup
+                                    defaultValue={sessionData.votingMode}
+                                    onValueChange={(value: 'single' | 'infinite') => handleSetVotingMode(value)}
+                                    className="flex space-x-4"
+                                    disabled={isProcessingAdminAction}
+                                >
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="single" id="single-vote" />
+                                        <Label htmlFor="single-vote" className="text-sm">Single Vote per Round</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="infinite" id="infinite-votes" />
+                                        <Label htmlFor="infinite-votes" className="text-sm">Infinite Votes per Round</Label>
+                                    </div>
+                                </RadioGroup>
+                                <Tooltip>
+                                    <TooltipTrigger asChild><Button variant="ghost" size="sm" className="mt-1 px-1 py-0 h-auto"><Info className="h-3 w-3 text-muted-foreground"/></Button></TooltipTrigger>
+                                    <TooltipContent side="bottom" align="start"><p className="max-w-xs">'Single': Each participant can vote once per presenter/round. 'Infinite': Participants can vote multiple times.</p></TooltipContent>
+                                </Tooltip>
+                            </div>
                             <div className="flex items-center justify-between space-x-2 p-3 border rounded-md bg-muted/20 dark:bg-muted/30">
                                 <Label htmlFor="sounds-enabled" className="flex items-center text-sm cursor-pointer">
                                     {sessionData.soundsEnabled ? <Volume2 className="mr-2 h-5 w-5" /> : <VolumeX className="mr-2 h-5 w-5" />}
@@ -1143,7 +1176,7 @@ export default function SessionPage() {
                 <AlertDialogHeader>
                 <AlertDialogTitle>Confirm Kick</AlertDialogTitle>
                 <AlertDialogDescription>
-                    Are you sure you want to remove "<span className="font-semibold">{participantToKick?.nickname}</span>" from the session? They will be immediately disconnected.
+                    Are you sure you want to remove "<span className="font-semibold">{participantToKick?.nickname}</span>" from the session? They will be immediately disconnected and removed from the presenter queue if present.
                 </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -1159,4 +1192,3 @@ export default function SessionPage() {
     </main>
   );
 }
-

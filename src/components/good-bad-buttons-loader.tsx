@@ -3,12 +3,14 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { SessionData } from '@/app/session/[sessionId]/page'; // Assuming SessionData is exported or define relevant type here
 
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
   soundsEnabled: boolean;
-  roundId?: number; // Added to identify the specific round/presenter
+  roundId?: number; 
+  votingMode: SessionData['votingMode']; // Use the specific type from SessionData
 }
 
 const GoodBadButtons = dynamic<GoodBadButtonsProps>(() => import('@/components/good-bad-buttons'), {

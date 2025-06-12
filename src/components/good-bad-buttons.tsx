@@ -14,16 +14,17 @@ import {
   getDoc,
   FirestoreError,
 } from "firebase/firestore";
-
+import type { SessionData } from '@/app/session/[sessionId]/page'; // Import SessionData type
 
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
   soundsEnabled: boolean;
-  roundId?: number; // To help distinguish between different active rounds/presenters
+  roundId?: number; 
+  votingMode: SessionData['votingMode']; // Use specific type
 }
 
-const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp, soundsEnabled, roundId }) => {
+const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp, soundsEnabled, roundId, votingMode }) => {
   const { toast } = useToast();
   const likeSynth = useRef<Tone.Synth | null>(null);
   const dislikeSynth = useRef<Tone.Synth | null>(null);
@@ -31,24 +32,22 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   const [internalIsRoundActive, setInternalIsRoundActive] = useState(isRoundActiveProp);
   const [isLoadingClick, setIsLoadingClick] = useState(false);
   const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
-  const localStorageKey = `hasVoted_${sessionId}_${roundId ?? 'general'}`; // Make key specific to roundId
+  const localStorageKey = `hasVoted_${sessionId}_${roundId ?? 'general'}`;
 
   useEffect(() => {
     setInternalIsRoundActive(isRoundActiveProp);
 
-    if (isRoundActiveProp) {
-      // If the component is told the round is active for the current context (session + roundId),
-      // reset the voting ability.
-      // We use a round-specific localStorage key to track votes per round.
-      const votedInThisSpecificRound = localStorage.getItem(localStorageKey) === 'true';
-      setHasVotedInCurrentRound(votedInThisSpecificRound);
-    } else {
-      // If the round is not active, ensure voting is disabled.
-      // We don't necessarily need to clear localStorage here, as the key is round-specific.
-      // However, if the round becomes inactive, the vote flag should be false.
-      setHasVotedInCurrentRound(false);
+    if (votingMode === 'single') {
+      if (isRoundActiveProp) {
+        const votedInThisSpecificRound = localStorage.getItem(localStorageKey) === 'true';
+        setHasVotedInCurrentRound(votedInThisSpecificRound);
+      } else {
+        setHasVotedInCurrentRound(false);
+      }
+    } else { // Infinite voting mode
+      setHasVotedInCurrentRound(false); // Always allow voting
     }
-  }, [isRoundActiveProp, roundId, sessionId, localStorageKey]);
+  }, [isRoundActiveProp, roundId, sessionId, localStorageKey, votingMode]);
 
 
   useEffect(() => {
@@ -117,15 +116,17 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       if (!currentSessionDoc.exists() || !currentSessionDoc.data()?.isRoundActive) {
         toast({ title: "Vote Not Counted", description: "The feedback round may have just closed or the session has ended.", variant: "default" });
         setInternalIsRoundActive(false); 
-        setHasVotedInCurrentRound(false); // Ensure UI reflects inability to vote
+        if (votingMode === 'single') setHasVotedInCurrentRound(false);
         return false;
       }
 
       await updateDoc(sessionDocRef, {
         [type === 'like' ? 'likeClicks' : 'dislikeClicks']: increment(1)
       });
-      localStorage.setItem(localStorageKey, 'true'); // Mark as voted for this specific round
-      setHasVotedInCurrentRound(true);
+      if (votingMode === 'single') {
+        localStorage.setItem(localStorageKey, 'true'); 
+        setHasVotedInCurrentRound(true);
+      }
       return true;
     } catch (error) {
       console.error("Error updating score: ", error);
@@ -139,24 +140,24 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
         if (currentSessionDoc.exists()) {
           const isActive = currentSessionDoc.data()?.isRoundActive ?? false;
           setInternalIsRoundActive(isActive);
-          if (!isActive) {
+          if (!isActive && votingMode === 'single') {
             setHasVotedInCurrentRound(false);
           }
         } else { 
           setInternalIsRoundActive(false);
-          setHasVotedInCurrentRound(false);
+          if (votingMode === 'single') setHasVotedInCurrentRound(false);
         }
       } catch (docReadError) {
         console.error("Error re-reading session doc for state sync:", docReadError);
          setInternalIsRoundActive(false); 
-         setHasVotedInCurrentRound(false);
+         if (votingMode === 'single') setHasVotedInCurrentRound(false);
       }
       return false;
     }
   };
 
   const playLikeSound = async () => {
-    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound) return;
+    if (!internalIsRoundActive || isLoadingClick || (votingMode === 'single' && hasVotedInCurrentRound)) return;
     if (soundsEnabled && !await ensureAudioContextStarted()) return;
     if (!likeSynth.current) return;
     
@@ -172,7 +173,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   };
 
   const playDislikeSound = async () => {
-    if (!internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound) return;
+    if (!internalIsRoundActive || isLoadingClick || (votingMode === 'single' && hasVotedInCurrentRound)) return;
     if (soundsEnabled && !await ensureAudioContextStarted()) return;
     if (!dislikeSynth.current) return;
 
@@ -187,16 +188,19 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   };
   
   const pulseAnimationClass = "active:scale-95 transform transition-transform duration-150 ease-in-out";
-  const buttonDisabledState = !internalIsRoundActive || isLoadingClick || hasVotedInCurrentRound;
+  const buttonDisabledState = !internalIsRoundActive || isLoadingClick || (votingMode === 'single' && hasVotedInCurrentRound);
   const disabledClass = buttonDisabledState ? "opacity-50 cursor-not-allowed" : "";
 
   let statusMessage = "";
-  if (hasVotedInCurrentRound && internalIsRoundActive) {
+  if (votingMode === 'single' && hasVotedInCurrentRound && internalIsRoundActive) {
     statusMessage = "You have already voted in this feedback round.";
   } else if (!internalIsRoundActive) {
     statusMessage = "The feedback round is currently CLOSED. Please wait for the admin to open it.";
   } else if (internalIsRoundActive) {
     statusMessage = "The feedback round is OPEN. Cast your vote!";
+    if (votingMode === 'infinite') {
+        statusMessage += " (Infinite votes allowed)";
+    }
   }
 
 
