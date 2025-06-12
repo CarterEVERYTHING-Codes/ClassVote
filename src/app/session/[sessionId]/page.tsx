@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"; // Added TooltipContent
 import { cn } from "@/lib/utils";
 
 
@@ -45,8 +45,8 @@ interface ParticipantData {
 
 interface PresenterEntry {
   name: string;
-  uid: string | null; // Firebase UID of the participant if they have an account
-  participantId: string; // The UID of the participant entry when they joined the session (could be anonymous UID)
+  uid: string | null; 
+  participantId: string; 
 }
 
 interface PresenterScore {
@@ -67,12 +67,12 @@ interface SessionData {
   soundsEnabled: boolean;
   resultsVisible: boolean;
   participants: Record<string, ParticipantData>;
-  presenterQueue: PresenterEntry[]; // Changed
-  currentPresenterIndex: number; // Remains
+  presenterQueue: PresenterEntry[]; 
+  currentPresenterIndex: number; 
   sessionType?: string;
   presenterScores?: PresenterScore[];
   isPermanentlySaved?: boolean;
-  votingMode: 'single' | 'infinite'; // New field
+  votingMode: 'single' | 'infinite'; 
 }
 
 interface ParticipantToKick {
@@ -393,37 +393,40 @@ export default function SessionPage() {
     handleAdminAction(
       async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
-        // Also remove from presenterQueue if they are in it
+        
         const batch = writeBatch(db);
         batch.update(sessionDocRef, {
           [`participants.${participantToKick.uid}`]: deleteField()
         });
 
         if (sessionData?.presenterQueue && sessionData.presenterQueue.some(p => p.participantId === participantToKick.uid)) {
-            const newQueue = sessionData.presenterQueue.filter(p => p.participantId !== participantToKick.uid);
+            let newQueue = sessionData.presenterQueue.filter(p => p.participantId !== participantToKick.uid);
             let newIndex = sessionData.currentPresenterIndex;
+            const kickedPresenterExisted = sessionData.presenterQueue.find(p => p.participantId === participantToKick.uid);
             
-            // Adjust currentPresenterIndex if the kicked user was before or at the current index
-            if (sessionData.currentPresenterIndex >=0 && sessionData.presenterQueue.length > 0) {
-                const kickedUserIndexInQueue = sessionData.presenterQueue.findIndex(p => p.participantId === participantToKick.uid);
-                if (kickedUserIndexInQueue !== -1 && kickedUserIndexInQueue <= sessionData.currentPresenterIndex) {
-                    newIndex = sessionData.currentPresenterIndex - 1; // Decrement if kicked user was at or before current
+            if (kickedPresenterExisted) {
+                const kickedPresenterOldIndex = sessionData.presenterQueue.findIndex(p => p.participantId === participantToKick.uid);
+
+                if (kickedPresenterOldIndex < newIndex) {
+                    newIndex--; 
+                } else if (kickedPresenterOldIndex === newIndex) {
+                    
+                    batch.update(sessionDocRef, { 
+                        likeClicks: 0, 
+                        dislikeClicks: 0,
+                        isRoundActive: newQueue.length > 0 && newIndex < newQueue.length 
+                    });
+                    
+                    newIndex = (newQueue.length === 0 || newIndex >= newQueue.length) ? -1 : newIndex; 
                 }
             }
-            // If the kicked user was the current presenter, and was the last in newQueue, it's end of queue
-            const currentPresenter = sessionData.presenterQueue[sessionData.currentPresenterIndex];
-            if (currentPresenter?.participantId === participantToKick.uid && newIndex >= newQueue.length -1 && newQueue.length > 0) {
-                 // No, if current presenter is kicked, newIndex should point to next, or if no next, then -1 or end of queue
-            } else if (currentPresenter?.participantId === participantToKick.uid && newIndex < 0 && newQueue.length === 0){
-                 newIndex = -1; // No presenters left
-            }
+            if (newQueue.length === 0) newIndex = -1;
 
 
-            batch.update(sessionDocRef, { presenterQueue: newQueue });
-            // If the kicked user *was* the current presenter, we might need to advance or reset.
-            // For simplicity now, we just remove them. Admin might need to manually advance.
-            // More complex logic would be to auto-advance if current presenter is kicked.
-            // This could involve resetting scores if they were active.
+            batch.update(sessionDocRef, { 
+                presenterQueue: newQueue,
+                currentPresenterIndex: newIndex
+            });
              toast({title: "Participant Kicked", description: `Participant "${participantToKick.nickname}" also removed from presenter queue if present.`})
         }
         await batch.commit();
@@ -438,8 +441,11 @@ export default function SessionPage() {
 
   const handleAddParticipantToQueue = (participantEntry: ParticipantData) => {
     if (!isCurrentUserAdmin || !sessionData || sessionData.sessionEnded) return;
-    const { nickname, uid: participantId } = participantEntry; // uid here is the key from participants map
-    const actualAccountUid = authUser?.isAnonymous === false && authUser?.uid === participantId ? authUser.uid : null;
+    const { nickname, uid: participantId } = participantEntry; 
+    
+    const participantAccount = (authUser && !authUser.isAnonymous && authUser.uid === participantId) ? authUser : null;
+    const actualAccountUid = participantAccount ? participantAccount.uid : null;
+
 
     const newPresenter: PresenterEntry = { name: nickname, uid: actualAccountUid, participantId: participantId };
 
@@ -458,29 +464,24 @@ export default function SessionPage() {
 
      handleAdminAction(async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
-        let newIndex = sessionData.currentPresenterIndex;
         let newQueue = sessionData.presenterQueue.filter((_, i) => i !== indexToRemove);
+        let newIndex = sessionData.currentPresenterIndex;
 
-        if (indexToRemove < sessionData.currentPresenterIndex) {
-            newIndex = sessionData.currentPresenterIndex - 1;
-        } else if (indexToRemove === sessionData.currentPresenterIndex) {
-            // If current presenter is removed, reset votes and stay at this index (which will now point to next or end)
-            // Or, if it makes it out of bounds, set to end of queue or last valid
-            newIndex = Math.min(sessionData.currentPresenterIndex, newQueue.length -1);
-            if (newQueue.length === 0) newIndex = -1;
-            // If current presenter removed, also reset votes
+        if (indexToRemove < newIndex) {
+            newIndex--;
+        } else if (indexToRemove === newIndex) {
             await updateDoc(sessionDocRef, {
                 presenterQueue: newQueue,
-                currentPresenterIndex: newIndex,
+                currentPresenterIndex: (newQueue.length === 0 || newIndex >= newQueue.length) ? -1 : newIndex,
                 likeClicks: 0,
                 dislikeClicks: 0,
-                isRoundActive: newQueue.length > 0 && newIndex !== -1 && newIndex < newQueue.length // Only active if valid presenter
+                isRoundActive: newQueue.length > 0 && newIndex < newQueue.length 
             });
-            return; // Exit early as update is done
+            return; 
         }
          await updateDoc(sessionDocRef, {
              presenterQueue: newQueue,
-             currentPresenterIndex: newIndex // Adjust index if needed
+             currentPresenterIndex: newIndex 
          });
      }, `${presenterToRemove.name} removed from queue.`, `Could not remove ${presenterToRemove.name}.`);
   };
@@ -493,8 +494,8 @@ export default function SessionPage() {
             currentPresenterIndex: -1,
             likeClicks: 0,
             dislikeClicks: 0,
-            isRoundActive: true, // General feedback becomes active
-            presenterScores: [] // Clear overall scores too
+            isRoundActive: true, 
+            presenterScores: [] 
         });
     }, "Presenter queue cleared. Scores reset. Overall leaderboard cleared.", "Could not clear presenter queue.");
   };
@@ -532,7 +533,7 @@ export default function SessionPage() {
 
         const newIndex = currentPresenterIndex + 1;
         if (newIndex >= presenterQueue.length) {
-            updatePayload.currentPresenterIndex = newIndex; // Mark as past the end
+            updatePayload.currentPresenterIndex = newIndex; 
             updatePayload.isRoundActive = false;
             toastDescription += "End of presenter queue. Feedback round closed.";
         } else {
@@ -541,11 +542,27 @@ export default function SessionPage() {
             toastDescription += `Now presenting: ${presenterQueue[newIndex].name}. Feedback round started.`;
         }
         await updateDoc(sessionDocRef, updatePayload);
-        // Success message handled by handleAdminAction if toastDescription is passed
+        
     }, 
-    // This will be dynamically generated by the logic above if successful
     "", 
-    "Could not start next feedback round.");
+    "Could not start next feedback round.").then(() => {
+        
+        const { currentPresenterIndex: updatedIdx, presenterQueue: updatedQueue, isRoundActive: updatedActive } = sessionData;
+        let desc = "";
+        if (updatedIdx >= 0 && updatedIdx < updatedQueue.length) {
+            const currentPres = updatedQueue[updatedIdx];
+            if (sessionData.currentPresenterIndex >= 0 && sessionData.currentPresenterIndex < sessionData.presenterQueue.length) {
+                desc += `Scores for ${sessionData.presenterQueue[sessionData.currentPresenterIndex].name} (Likes: ${sessionData.likeClicks}, Dislikes: ${sessionData.dislikeClicks}) recorded. `;
+            }
+             desc += `Now presenting: ${currentPres.name}. Feedback round ${updatedActive ? 'started' : 'closed'}.`;
+        } else if (updatedIdx >= updatedQueue.length && updatedQueue.length > 0) {
+             if (sessionData.currentPresenterIndex >= 0 && sessionData.currentPresenterIndex < sessionData.presenterQueue.length) {
+                desc += `Scores for ${sessionData.presenterQueue[sessionData.currentPresenterIndex].name} (Likes: ${sessionData.likeClicks}, Dislikes: ${sessionData.dislikeClicks}) recorded. `;
+            }
+            desc += "End of presenter queue. Feedback round closed.";
+        }
+        if (desc) toast({title: "Admin Action Successful", description: desc});
+    });
   };
 
   const handleResetCurrentPresenterVotes = () => {
@@ -703,7 +720,7 @@ export default function SessionPage() {
   }
 
   const participantListForAdmin = Object.entries(sessionData.participants || {})
-    .map(([uid_key, data]) => ({ id: uid_key, ...data })) // id is the key from participants map
+    .map(([uid_key, data]) => ({ id: uid_key, ...data })) 
     .sort((a, b) => {
         const timeAValue = a.joinedAt;
         const timeBValue = b.joinedAt;
@@ -730,7 +747,7 @@ export default function SessionPage() {
     presenterDisplayMessage = `Queue ready (${presenterQueue.length} presenter${presenterQueue.length === 1 ? '' : 's'}). Admin can start.`
     sessionStatusMessage = "Waiting for admin to start presentations."
   }
-  else { // General feedback mode
+  else { 
     presenterDisplayMessage = isCurrentUserAdmin ? "General feedback. Add presenters or reset votes." : "General feedback session.";
     sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is PAUSED.";
   }
