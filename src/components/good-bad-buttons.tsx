@@ -7,7 +7,14 @@ import { ThumbsUp, ThumbsDown } from "lucide-react";
 import * as Tone from "tone";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, increment, getDoc, FirebaseError } from "firebase/firestore";
+import {
+  doc,
+  updateDoc,
+  increment,
+  getDoc,
+  FirestoreError,
+} from "firebase/firestore";
+
 
 interface GoodBadButtonsProps {
   sessionId: string;
@@ -122,7 +129,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
       return true;
     } catch (error) {
       console.error("Error updating score: ", error);
-      if ((error as FirebaseError)?.code === 'permission-denied' || (error as FirebaseError)?.code === 'aborted') {
+      if ((error as FirestoreError)?.code === 'permission-denied' || (error as FirestoreError)?.code === 'aborted') {
            toast({ title: "Vote Not Counted", description: "The feedback round may have just closed.", variant: "default" });
       } else {
           toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
