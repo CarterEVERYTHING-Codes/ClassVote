@@ -74,7 +74,7 @@ export default function HomePage() {
       }
     }
     await createSession(false, activeUser);
-    setIsProcessingSessionAction(false);
+    // isProcessingSessionAction will be reset by createSession
   };
 
   const handleCreateAccountSession = () => {
@@ -153,7 +153,8 @@ export default function HomePage() {
                   <Button
                     onClick={handleCreateQuickSession}
                     className="w-full text-lg py-6"
-                    disabled={isProcessingSessionAction || authLoading}
+                    disabled={authLoading || (isProcessingSessionAction && (!user || user.isAnonymous))}
+                    title={authLoading ? "Loading user status..." : undefined}
                   >
                     {isProcessingSessionAction && (!user || user.isAnonymous) ? 'Processing...' : 'Quick Start (Anonymous)'}
                   </Button>
@@ -163,11 +164,13 @@ export default function HomePage() {
                 </>
               )}
 
+              {/* Show Account Session button always, adjust variant based on user state */}
               <Button
                 onClick={handleCreateAccountSession}
                 className="w-full text-lg py-6"
                 variant={(!user || user.isAnonymous) ? "outline" : "default"}
-                disabled={authLoading || (user && !user.isAnonymous && isProcessingSessionAction)}
+                disabled={!!(authLoading || (user && !user.isAnonymous && isProcessingSessionAction))}
+                title={authLoading ? "Loading user status..." : (user && !user.isAnonymous && isProcessingSessionAction) ? "Processing..." : undefined}
               >
                 <UserCircle className="mr-2 h-5 w-5"/>
                 {(isProcessingSessionAction && user && !user.isAnonymous) ? 'Processing...' : 'Create Account Session'}
