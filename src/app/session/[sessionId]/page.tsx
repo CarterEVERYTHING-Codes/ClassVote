@@ -124,11 +124,17 @@ export default function SessionPage() {
         setSessionData(data);
 
         if (isCurrentUserAdmin && data.presenterQueue && data.presenterQueue.length > 0 && !data.sessionEnded) {
-           // Only set presenterQueueInput from Firestore if it's currently empty,
-           // or if the presenter index has advanced (to avoid overwriting admin's edits if they are just typing)
-           // The visual update of removing presented users is handled directly in handleNextPresenter for immediate feedback.
            if (presenterQueueInput.trim() === '' && data.currentPresenterIndex === -1) { 
              setPresenterQueueInput(data.presenterQueue.map(p => p.name).join('\n'));
+           } else if (data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= 0 && data.currentPresenterIndex < data.presenterQueue.length) {
+            // If a presenter is active, keep the textarea reflecting the remaining queue
+            // This logic is also in handleNextPresenter, but good to have here for initial load/refresh
+             const remainingPresenters = data.presenterQueue.slice(data.currentPresenterIndex).map(p => p.name).join('\n');
+             if(presenterQueueInput.trim() === '' || presenterQueueInput !== remainingPresenters) {
+                 setPresenterQueueInput(remainingPresenters);
+             }
+           } else if (data.currentPresenterName === "End of Queue" || (data.presenterQueue.length > 0 && data.currentPresenterIndex !== undefined && data.currentPresenterIndex >= data.presenterQueue.length) ) {
+             if(presenterQueueInput.trim() !== '') setPresenterQueueInput(''); // Clear if queue is done
            }
         }
 
@@ -340,7 +346,7 @@ export default function SessionPage() {
         toast({ title: "Session Already Ended", description: "Admin is redirecting..." });
       }
 
-      if (typeof router.asPath === 'string' && router.asPath.startsWith('/session/')) { 
+      if (router && typeof router.asPath === 'string' && router.asPath.startsWith('/session/')) { 
          router.push('/');
       }
     } catch (error) {
@@ -448,13 +454,12 @@ export default function SessionPage() {
                 updatePayload.isRoundActive = false;
                 updatePayload.currentPresenterName = "End of Queue";
                 updatePayload.currentPresenterUid = null; 
-                setPresenterQueueInput(''); // Clear textarea as queue is done
+                setPresenterQueueInput(''); 
             } else { 
                 const nextPresenter = currentQueueFromState[newIndex];
                 updatePayload.currentPresenterName = nextPresenter.name;
                 updatePayload.currentPresenterUid = nextPresenter.uid || null;
                 updatePayload.isRoundActive = true;
-                // Update textarea to show remaining presenters
                 const remainingPresenters = currentQueueFromState.slice(newIndex).map(p => p.name).join('\n');
                 setPresenterQueueInput(remainingPresenters);
             }
@@ -518,7 +523,7 @@ export default function SessionPage() {
   const copySessionCode = () => {
     if (!sessionId) return;
     navigator.clipboard.writeText(sessionId)
-      .then(() => toast({ title: "Session Code Copied!", description: sessionId }))
+      .then(() => toast({ title: "Session Code Copied!", description: `${sessionId} - Tell participants to go to classvote.online` }))
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy code.", variant: "destructive"}));
   }
 
@@ -557,7 +562,7 @@ export default function SessionPage() {
                 <CardHeader>
                     <CardTitle className="text-2xl text-center">Enter Your Nickname</CardTitle>
                     <CardDescription className="text-center">
-                        Choose a nickname to join session <span className="font-bold">{sessionId}</span>. This cannot be changed later.
+                        Choose a nickname to join session <span className="font-bold">{sessionId}</span> at <strong className="text-primary">classvote.online</strong>. This cannot be changed later.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -594,7 +599,7 @@ export default function SessionPage() {
               <CardHeader>
                   <CardTitle className="text-2xl text-center">Enter Your Nickname</CardTitle>
                   <CardDescription className="text-center">
-                      Choose a nickname to join session <span className="font-bold">{sessionId}</span>. This cannot be changed later.
+                      Choose a nickname to join session <span className="font-bold">{sessionId}</span> at <strong className="text-primary">classvote.online</strong>. This cannot be changed later.
                   </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -659,7 +664,7 @@ export default function SessionPage() {
 
   if (sessionData.currentPresenterName === "End of Queue") {
     currentPresenterInfoForDisplay = "End of Queue";
-  } else if (isSpecificPresenterActive && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && sessionData.currentPresenterIndex !== undefined) {
+  } else if (isSpecificPresenterActive && sessionData.presenterQueue && sessionData.presenterQueue.length > 0 && sessionData.currentPresenterIndex !== undefined && sessionData.currentPresenterIndex < sessionData.presenterQueue.length) {
     const totalPresenters = sessionData.presenterQueue.length;
     const currentIndexHuman = sessionData.currentPresenterIndex + 1;
     currentPresenterInfoForDisplay = `${sessionData.currentPresenterName} (${currentIndexHuman} of ${totalPresenters})`;
@@ -741,9 +746,10 @@ export default function SessionPage() {
                                 <Copy className="h-5 w-5" />
                             </Button>
                         </TooltipTrigger>
-                        <TooltipContent><p>Copy Session Code</p></TooltipContent>
+                        <TooltipContent><p>Copy Session Code (Participants join at classvote.online)</p></TooltipContent>
                     </Tooltip>
                 </div>
+                 <p className="text-xs text-muted-foreground">Participants join at <strong className="text-primary">classvote.online</strong></p>
                 <div className="flex items-center justify-center mt-1 text-sm text-muted-foreground">
                     <Users className="mr-1.5 h-4 w-4" />
                     <span>{currentParticipantCount} Participant{currentParticipantCount === 1 ? '' : 's'}</span>
@@ -781,13 +787,12 @@ export default function SessionPage() {
                 "space-y-4 md:col-span-7" 
             )}>
                 <Leaderboard
-                    sessionId={sessionId}
+                    likeClicks={sessionData.likeClicks}
+                    dislikeClicks={sessionData.dislikeClicks}
                     resultsVisible={sessionData.resultsVisible}
                     currentPresenterName={isSpecificPresenterActive ? sessionData.currentPresenterName : null}
                     presenterQueueEmpty={isPresenterQueueEffectivelyEmpty}
                     isCurrentPresenterSelf={isSelfPresenter}
-                    likeClicks={sessionData.likeClicks}
-                    dislikeClicks={sessionData.dislikeClicks}
                 />
                  {showLiveOverallLeaderboard && (
                     <OverallLeaderboard presenterScores={sessionData.presenterScores!} />

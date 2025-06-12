@@ -35,8 +35,9 @@ ClassVote is a real-time, interactive web application where users create or join
         *   Go to the **Settings** tab (within Authentication):
             *   Scroll to **Authorized domains**.
             *   Click **Add domain** and add `localhost` if it's not already present. This is crucial for local development.
+            *   **Add your custom domain:** If you are using `classvote.online` or any other custom domain, add it here (e.g., `classvote.online`).
             *   **If using Google Cloud Workstations or other port-forwarding services:** You might get errors like `auth/requests-from-referer-...-are-blocked`. You need to add the specific domain shown in the error message to this "Authorized domains" list. For example, if the error shows `https://1234-my-workstation.cluster-xyz.cloudworkstations.dev`, you would add `1234-my-workstation.cluster-xyz.cloudworkstations.dev` here. Also add the non-port-prefixed version if applicable, e.g., `my-workstation.cluster-xyz.cloudworkstations.dev`.
-            *   Your deployed app's domain will also need to be listed here (Firebase usually adds this automatically when you set up Hosting).
+            *   Your deployed app's domain (e.g., the one Vercel gives you, or `classvote.online`) will also need to be listed here (Firebase usually adds its own `*.firebaseapp.com` and `*.web.app` domains automatically when you set up Hosting).
     *   **Firestore:** In the Firebase console, navigate to Firestore Database (under Build) and create a database. Start in "production mode" and choose a region.
     *   **Register a Web App:** Go to Project Overview > Project settings (gear icon) > General tab. Scroll down to "Your apps" and click on the Web icon (</>) to add a web app. Follow the prompts.
     *   **Copy Configuration:** After registering the web app, Firebase will display a `firebaseConfig` object. Copy these values.
@@ -101,14 +102,13 @@ ClassVote is a real-time, interactive web application where users create or join
                                         (
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive', 'presenterScores']) &&
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && // Validated name
-                                            (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) && // Validated UID
-                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number && // Validated score structure
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && 
+                                            (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) && 
+                                            request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number && 
                                             request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
                                             (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null))
                                         )
                                     ) &&
-                                    // Ensure other fields are not changed unexpectedly during session end
                                     request.resource.data.likeClicks == resource.data.likeClicks &&
                                     request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
                                     request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
@@ -151,7 +151,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                     request.resource.data.currentPresenterUid == resource.data.currentPresenterUid &&
                                     request.resource.data.presenterScores == resource.data.presenterScores
                                   ) ||
-                                  // Set/Update Presenter Queue (resets scores, presenterScores, current presenter details)
+                                  // Set/Update Presenter Queue
                                   (
                                     request.resource.data.presenterQueue is list &&
                                     (request.resource.data.presenterQueue.size() == 0 || (
@@ -177,15 +177,15 @@ ClassVote is a real-time, interactive web application where users create or join
                                   ) ||
                                   // Advancing Presenter
                                   (
-                                    request.resource.data.presenterQueue == resource.data.presenterQueue && // Queue itself must not change
-                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex + 1 && // Index must advance by 1
-                                    request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && // Scores reset
+                                    request.resource.data.presenterQueue == resource.data.presenterQueue && 
+                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex + 1 && 
+                                    request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && 
                                     request.resource.data.sessionEnded == resource.data.sessionEnded && 
                                     request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
                                     request.resource.data.resultsVisible == resource.data.resultsVisible &&
                                     request.resource.data.participants == resource.data.participants &&
                                     (
-                                      // Case 1: Advancing to a valid next presenter in the queue
+                                      // Case 1: Advancing to a valid next presenter
                                       (
                                         request.resource.data.currentPresenterIndex < request.resource.data.presenterQueue.size() &&
                                         request.resource.data.currentPresenterName == request.resource.data.presenterQueue[request.resource.data.currentPresenterIndex].name &&
@@ -195,7 +195,6 @@ ClassVote is a real-time, interactive web application where users create or join
                                           // Subcase 1.1: Score for previous presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            // Validate new score structure and content
                                             request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) && request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
                                             request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
                                             (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) &&
@@ -204,7 +203,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                               'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
                                             ])
                                           ) ||
-                                          // Subcase 1.2: Score for previous presenter IS NOT recorded (e.g. first presenter, or from "End of Queue")
+                                          // Subcase 1.2: Score for previous presenter IS NOT recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() &&
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -224,7 +223,6 @@ ClassVote is a real-time, interactive web application where users create or join
                                           // Subcase 2.1: Score for the actual last presenter IS recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                            // Validate new score structure and content
                                             request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) && request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number && request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
                                             request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.currentPresenterName && 
                                             (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.currentPresenterUid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.currentPresenterUid == null)) &&
@@ -233,7 +231,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                               'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'
                                             ])
                                           ) ||
-                                          // Subcase 2.2: Score for last presenter IS NOT recorded (e.g. clicked "Next" when already at "End of Queue")
+                                          // Subcase 2.2: Score for last presenter IS NOT recorded
                                           (
                                             request.resource.data.presenterScores.size() == resource.data.presenterScores.size() &&
                                             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -353,6 +351,9 @@ ClassVote is a real-time, interactive web application where users create or join
             *   `localhost`
             *   `localhost:*` (wildcard for any port)
             *   `http://localhost:YOUR_PORT_NUMBER` (e.g., `http://localhost:9002`)
+            *   **Your custom domain:** `classvote.online`
+            *   **Your custom domain (with wildcard for Vercel/Netlify previews or other subdomains):** `*.classvote.online` (if applicable)
+            *   **Your Vercel deployment URL (if applicable):** `YOUR_VERCEL_PROJECT_NAME.vercel.app`
             *   **If using Google Cloud Workstations or similar port-forwarding:** Add the specific `https://<your-workstation-subdomain>.cloudworkstations.dev/*` pattern that appears in the error message (e.g., `https://6000-my-workstation.cluster-xyz.cloudworkstations.dev/*`). Make sure to include `https://` and the trailing `/*`.
         *   Under **API restrictions**, if "Restrict key" is chosen, ensure **"Identity Toolkit API"** is in the list of allowed APIs. "Don't restrict key" is often simpler for development (but less secure for production).
         *   **Click SAVE at the bottom of the GCP page.** Changes can take a few minutes to propagate.
@@ -370,8 +371,8 @@ ClassVote is a real-time, interactive web application where users create or join
         4.  **Advanced - Check OAuth 2.0 Client ID in GCP:**
             *   In GCP Console, go to APIs & Services > Credentials.
             *   Under "OAuth 2.0 Client IDs", find the client ID that was likely auto-created by Firebase (e.g., "Web client (auto created by Firebase)"). Click its name.
-            *   **Verify "Authorized JavaScript origins":** This list MUST include `https://YOUR_PROJECT_ID.firebaseapp.com` AND your app's origin (e.g., `https://YOUR_CLOUD_WORKSTATION_URL`, `http://localhost:PORT`).
-            *   **Verify "Authorized redirect URIs":** This list MUST include `https://YOUR_PROJECT_ID.firebaseapp.com/__/auth/handler`.
+            *   **Verify "Authorized JavaScript origins":** This list MUST include `https://YOUR_PROJECT_ID.firebaseapp.com`, `https://classvote.online` (and any other custom/Vercel domains), AND your app's origin (e.g., `https://YOUR_CLOUD_WORKSTATION_URL`, `http://localhost:PORT`).
+            *   **Verify "Authorized redirect URIs":** This list MUST include `https://YOUR_PROJECT_ID.firebaseapp.com/__/auth/handler` AND `https://classvote.online/__/auth/handler` (and similar for other custom/Vercel domains).
             *   If these are incorrect, it can cause this error. Firebase *should* manage these, but discrepancies can occur. Modifying these directly is an advanced step; proceed with caution.
 
     *   **Troubleshooting "auth/popup-closed-by-user" error:**
@@ -379,7 +380,7 @@ ClassVote is a real-time, interactive web application where users create or join
         1.  **Browser Pop-up Blocker / Extensions:** The most common cause. Even if the pop-up appears, an aggressive blocker or extension (ad blocker, privacy tool) might interfere.
             *   **Try in an Incognito/Private window.** This usually disables extensions.
             *   Temporarily disable your browser's pop-up blocker and relevant extensions.
-        2.  **Redirect URI Mismatch (Less likely if "action invalid" was fixed, but re-check):** Ensure `https://YOUR_PROJECT_ID.firebaseapp.com/__/auth/handler` is *exactly* correct in the GCP OAuth 2.0 Client ID's "Authorized redirect URIs".
+        2.  **Redirect URI Mismatch (Less likely if "action invalid" was fixed, but re-check):** Ensure `https://YOUR_PROJECT_ID.firebaseapp.com/__/auth/handler` AND `https://classvote.online/__/auth/handler` are *exactly* correct in the GCP OAuth 2.0 Client ID's "Authorized redirect URIs".
         3.  **`authDomain` in `firebaseConfig`:** Double-check it's `YOUR_PROJECT_ID.firebaseapp.com` in `src/lib/firebase.ts`.
         4.  **Third-party Cookies:** Ensure your browser isn't blocking third-party cookies, as this can sometimes interfere with pop-up authentication flows.
         5.  **Manually Closing:** The user might have accidentally closed the pop-up too soon.
@@ -393,12 +394,12 @@ ClassVote is a real-time, interactive web application where users create or join
 
 ## Key Features
 
-*   Create new voting sessions with a unique 6-digit code (either anonymously or linked to a Google account).
-*   Join existing sessions using the code.
+*   Create new voting sessions with a unique 6-digit code (either anonymously or linked to a Google account). Participants join at `classvote.online`.
+*   Join existing sessions using the code at `classvote.online`.
 *   **Mandatory Nicknames:** Users must enter a unique nickname (per session) before participating. Nicknames are immutable once set.
 *   Admin can optionally define a list of presenters for the session. Presenter names that match a participant's nickname will link the scores to that participant's account (UID).
 *   Admin can add current participants (with nicknames) to the presenter list textarea.
-*   Admin can advance through presenters ("Next Feedback Round"), resetting scores and feedback rounds for each. Scores for each presenter are recorded (with UID if matched) for an overall session leaderboard and for individual user result history.
+*   Admin can advance through presenters ("Next Feedback Round"), resetting scores and feedback rounds for each. Scores for each presenter are recorded (with UID if matched) for an overall session leaderboard and for individual user result history. The textarea visually updates to show remaining presenters.
 *   Current presenter's name (if any) is displayed to all participants.
 *   If no presenters are defined, feedback applies to the general session.
 *   Real-time "like" and "dislike" voting.
@@ -406,7 +407,7 @@ ClassVote is a real-time, interactive web application where users create or join
 *   Admin can kick participants from the session.
 *   Live leaderboard displaying current scores (admin can hide/reveal), adapts to general session or specific presenter.
 *   **Presenter Self-View:** A presenter can see their own scores even if general results are hidden by the admin, if their UID is matched.
-*   **Overall Session Leaderboard:** Displayed when the presenter queue is finished or the session ends, showing scores for all presenters in that session. Sorts by likes.
+*   **Overall Session Leaderboard:** Displayed as presenters complete their rounds, or when the presenter queue is finished or the session ends, showing scores for all presenters in that session. Sorts by likes.
 *   Admin controls to pause/resume feedback rounds and end sessions.
 *   User-friendly interface built with ShadCN UI and Tailwind CSS.
 *   Authentication via Firebase (Anonymous, Google Sign-In, Email/Password).
@@ -416,12 +417,14 @@ ClassVote is a real-time, interactive web application where users create or join
 *   **Results Page (`/results`):** Logged-in (non-anonymous) users can view:
     *   A history of sessions they administered, including the overall presenter scores for each.
     *   A history of their own presentation scores from past sessions where their name/account was matched.
+*   **Account Page (`/account`):** Logged-in (non-anonymous) users can manage their account, including sending a password reset email (for email/password accounts) and deleting their account.
 
 ## Next Steps (Future Enhancements - Not Yet Implemented)
 *   More granular privacy controls for viewing session results if needed (currently all authenticated users can read session details for the "Results" page).
 *   More formal mechanism for "sending" or sharing results with presenters post-session beyond the "Results" page.
 *   More detailed user profiles.
 *   Further optimization of Firestore queries for the Results page if performance becomes an issue with a very large number of sessions.
+*   Implement presenter list autofill/autocomplete in the textarea.
 
     
 

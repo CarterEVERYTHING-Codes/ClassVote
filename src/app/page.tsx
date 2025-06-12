@@ -53,7 +53,7 @@ export default function HomePage() {
         currentPresenterUid: null,
         presenterScores: [],
       });
-      toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Redirecting...` });
+      toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Participants join at classvote.online. Redirecting...` });
       router.push(`/session/${newSessionId}`);
     } catch (error) {
       console.error(`Error creating ${isAccountSession ? 'account' : 'quick'} session: `, error);
@@ -63,7 +63,6 @@ export default function HomePage() {
   };
 
   const handleCreateQuickSession = async () => {
-    // This button is only visible if user is anonymous or null
     setIsProcessingSessionAction(true);
     let activeUser = user; 
     if (!activeUser) {
@@ -75,12 +74,12 @@ export default function HomePage() {
       }
     }
     await createSession(false, activeUser);
-    setIsProcessingSessionAction(false); // Already handled in createSession, but safe
+    setIsProcessingSessionAction(false);
   };
 
   const handleCreateAccountSession = () => {
     if (user && !user.isAnonymous) {
-      createSession(true, user); // This will set isProcessingSessionAction
+      createSession(true, user);
     } else {
       toast({ title: "Sign In Required", description: "Please sign in or sign up to create an account-linked session. Redirecting...", variant: "default" });
       router.push('/auth');
@@ -146,7 +145,7 @@ export default function HomePage() {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><PlusCircle className="mr-2 h-6 w-6 text-primary" />Create New Session</CardTitle>
-              <CardDescription>Start a feedback session.</CardDescription>
+              <CardDescription>Start a feedback session. Tell participants to join at <strong className="text-primary">classvote.online</strong></CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {(!user || user.isAnonymous) && (
@@ -156,7 +155,7 @@ export default function HomePage() {
                     className="w-full text-lg py-6"
                     disabled={isProcessingSessionAction || authLoading}
                   >
-                    {isProcessingSessionAction ? 'Processing...' : 'Quick Start (Anonymous)'}
+                    {isProcessingSessionAction && (!user || user.isAnonymous) ? 'Processing...' : 'Quick Start (Anonymous)'}
                   </Button>
                   <p className="text-xs text-muted-foreground text-center px-2">
                     No account needed. Core features for immediate use.
@@ -168,7 +167,6 @@ export default function HomePage() {
                 onClick={handleCreateAccountSession}
                 className="w-full text-lg py-6"
                 variant={(!user || user.isAnonymous) ? "outline" : "default"}
-                // Disable if auth is loading OR if a session creation is processing (and this action is for a logged-in user)
                 disabled={authLoading || (user && !user.isAnonymous && isProcessingSessionAction)}
               >
                 <UserCircle className="mr-2 h-5 w-5"/>
@@ -185,7 +183,7 @@ export default function HomePage() {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center"><ArrowRight className="mr-2 h-6 w-6 text-primary" />Join Existing Session</CardTitle>
-              <CardDescription>Enter a 6-digit code to join.</CardDescription>
+              <CardDescription>Enter a 6-digit code from your presenter. Make sure you are at <strong className="text-primary">classvote.online</strong></CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
