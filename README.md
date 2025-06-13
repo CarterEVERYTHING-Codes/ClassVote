@@ -1,5 +1,4 @@
 
-
 # ClassVote
 
 ClassVote is a real-time, interactive web application where users create or join voting sessions to collectively provide feedback, typically for presentations. Participants must set a unique nickname for the session before they can engage. This nickname cannot be changed later. Participants can cast "like" or "dislike" votes, and a live leaderboard tracks the scores. Session administrators have controls to manage the feedback rounds, sound settings, results visibility, presenter queues, kick participants, and end sessions. An overall leaderboard displays scores for all presenters once the queue is complete or the session ends. Users can sign in with Google to associate sessions and scores with their account.
@@ -69,40 +68,26 @@ ClassVote is a real-time, interactive web application where users create or join
                                request.resource.data.votingMode == 'single' && 
                                request.resource.data.createdAt == request.time;
 
-              allow update: if request.auth != null && resource.data.sessionEnded == false && (
-                              // Admin actions
-                              (resource.data.adminUid == request.auth.uid &&
-                                request.resource.data.adminUid == resource.data.adminUid && 
-                                request.resource.data.createdAt == resource.data.createdAt && 
-                                request.resource.data.sessionType == resource.data.sessionType &&
+              allow update: if request.auth != null && (
+                              // ADMIN ACTIONS (Session must not be ended for most actions, unless explicitly allowed like toggling save on results page)
+                              (resource.data.adminUid == request.auth.uid && resource.data.sessionEnded == false && (
+                                // Toggle Pause/Resume Feedback 
                                 (
-                                  // Toggle Pause/Resume Feedback 
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRoundActive']) &&
+                                  request.resource.data.isRoundActive != resource.data.isRoundActive
+                                ) ||
+                                // End session (may add final presenter score)
+                                (
+                                  request.resource.data.sessionEnded == true && resource.data.sessionEnded == false &&
+                                  request.resource.data.isRoundActive == false && // Round must be closed when session ends
                                   (
-                                    request.resource.data.isRoundActive != resource.data.isRoundActive &&
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRoundActive']) &&
-                                    request.resource.data.likeClicks == resource.data.likeClicks &&
-                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                    request.resource.data.sessionEnded == resource.data.sessionEnded && 
-                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                    request.resource.data.participants == resource.data.participants &&
-                                    request.resource.data.presenterQueue == resource.data.presenterQueue &&
-                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
-                                    request.resource.data.presenterScores == resource.data.presenterScores &&
-                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved &&
-                                    request.resource.data.votingMode == resource.data.votingMode
-                                  ) ||
-                                  // End session (may add final presenter score)
-                                  (
-                                    request.resource.data.sessionEnded == true && resource.data.sessionEnded == false &&
-                                    request.resource.data.isRoundActive == false && // Round must be closed when session ends
+                                    // Case 1: Ending without adding a new presenter score (e.g., no active presenter, or queue was empty)
                                     (
-                                      // Case 1: Ending without adding a new presenter score (e.g., no active presenter, or queue was empty)
                                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) &&
                                       request.resource.data.presenterScores == resource.data.presenterScores // Scores do not change
                                     ) ||
+                                    // Case 2: Ending AND adding a new presenter score
                                     (
-                                      // Case 2: Ending AND adding a new presenter score
                                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive', 'presenterScores']) &&
                                       request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
                                       // Validate structure of the new score being added
@@ -119,117 +104,133 @@ ClassVote is a real-time, interactive web application where users create or join
                                         (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.presenterQueue[resource.data.currentPresenterIndex].uid == null)
                                       )
                                     )
-                                    ) &&
-                                    // These fields should generally not change during the "end session" action itself, 
-                                    // or their values are taken from the final state of the round.
-                                    request.resource.data.likeClicks == resource.data.likeClicks && 
-                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                    request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                    request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                    request.resource.data.participants == resource.data.participants &&
-                                    request.resource.data.presenterQueue == resource.data.presenterQueue && // Presenter queue itself doesn't change on end
-                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && // Index doesn't change on end
-                                    request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && // isPermanentlySaved can be toggled separately
-                                    request.resource.data.votingMode == resource.data.votingMode // votingMode doesn't change on end
-                                  ) ||
-                                  // Toggle soundsEnabled
+                                  ) &&
+                                  // These fields should generally not change during the "end session" action itself, 
+                                  // or their values are taken from the final state of the round.
+                                  request.resource.data.likeClicks == resource.data.likeClicks && 
+                                  request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
+                                  request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
+                                  request.resource.data.resultsVisible == resource.data.resultsVisible &&
+                                  request.resource.data.participants == resource.data.participants &&
+                                  request.resource.data.presenterQueue == resource.data.presenterQueue && // Presenter queue itself doesn't change on end
+                                  request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && // Index doesn't change on end
+                                  request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && // isPermanentlySaved can be toggled separately
+                                  request.resource.data.votingMode == resource.data.votingMode // votingMode doesn't change on end
+                                ) ||
+                                // Toggle soundsEnabled
+                                (
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soundsEnabled']) &&
+                                  request.resource.data.soundsEnabled != resource.data.soundsEnabled
+                                ) ||
+                                // Toggle resultsVisible
+                                (
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resultsVisible']) &&
+                                  request.resource.data.resultsVisible != resource.data.resultsVisible
+                                ) ||
+                                // Toggle votingMode
+                                (
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votingMode']) &&
+                                  request.resource.data.votingMode != resource.data.votingMode &&
+                                  (request.resource.data.votingMode == 'single' || request.resource.data.votingMode == 'infinite')
+                                ) ||
+                                // Manage Presenter Queue (add, remove, clear)
+                                (
+                                  request.resource.data.presenterQueue is list &&
+                                  (request.resource.data.presenterQueue.size() == 0 || ( // Validate structure if not empty
+                                      request.resource.data.presenterQueue[0] is map &&
+                                      request.resource.data.presenterQueue[0].name is string &&
+                                      request.resource.data.presenterQueue[0].participantId is string &&
+                                      (!('uid' in request.resource.data.presenterQueue[0]) || request.resource.data.presenterQueue[0].uid is string || request.resource.data.presenterQueue[0].uid == null)
+                                  )) &&
                                   (
-                                    request.resource.data.soundsEnabled != resource.data.soundsEnabled &&
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soundsEnabled']) &&
-                                    request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks && request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.presenterQueue == resource.data.presenterQueue && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
-                                  ) ||
-                                  // Toggle resultsVisible
+                                    // Clearing queue (which also resets scores and makes round active)
+                                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'])) ||
+                                    // Adding/removing from queue, and currentPresenterIndex might change, potentially resetting clicks & round
+                                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive'])) ||
+                                    // Only adding/removing from queue - clicks and round must be reset, index might not change if not current
+                                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'likeClicks', 'dislikeClicks', 'isRoundActive'])) || 
+                                    // Just updating the queue (e.g. a reorder not yet implemented client-side, but rule allows it if other fields match)
+                                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue'])) 
+                                  ) &&
+                                  // When queue ops that reset votes occur:
                                   (
-                                    request.resource.data.resultsVisible != resource.data.resultsVisible &&
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resultsVisible']) &&
-                                     request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks && request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.participants == resource.data.participants && request.resource.data.presenterQueue == resource.data.presenterQueue && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
-                                  ) ||
-                                  // Toggle votingMode
-                                  (
-                                    request.resource.data.votingMode != resource.data.votingMode &&
-                                    (request.resource.data.votingMode == 'single' || request.resource.data.votingMode == 'infinite') &&
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votingMode']) &&
-                                    request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks && request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.presenterQueue == resource.data.presenterQueue && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved
-                                  ) ||
-                                  // Manage Presenter Queue (add, remove, clear)
-                                  (
-                                    request.resource.data.presenterQueue is list &&
-                                    // Check structure of presenterQueue elements if not empty
-                                    (request.resource.data.presenterQueue.size() == 0 || (
-                                        request.resource.data.presenterQueue[0] is map &&
-                                        request.resource.data.presenterQueue[0].name is string &&
-                                        request.resource.data.presenterQueue[0].participantId is string &&
-                                        // UID can be string or null
-                                        (!('uid' in request.resource.data.presenterQueue[0]) || request.resource.data.presenterQueue[0].uid is string || request.resource.data.presenterQueue[0].uid == null)
-                                    )) &&
-                                    // currentPresenterIndex can change, likeClicks/dislikeClicks reset
-                                    request.resource.data.currentPresenterIndex is number && 
-                                    request.resource.data.likeClicks == 0 &&
-                                    request.resource.data.dislikeClicks == 0 &&
-                                    (
-                                      // Clearing queue or setting a new one (possibly reseting scores too)
-                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'])) ||
-                                      // Just updating queue and index (e.g., removing current, next one becomes current)
-                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive'])) ||
-                                      // Only adding/removing from queue, index might not change if not current
-                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue', 'likeClicks', 'dislikeClicks', 'isRoundActive'])) || 
-                                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['presenterQueue'])) 
-                                    ) &&
-                                    request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
-                                  ) ||
-                                  // Advancing Presenter ("Start Next Feedback Round")
-                                  (
-                                    request.resource.data.presenterQueue == resource.data.presenterQueue && // Queue itself doesn't change here
-                                    request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex + 1 && 
-                                    request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && 
-                                    request.resource.data.isRoundActive == true && // Round becomes active for new presenter
-                                    (
-                                      // Case 1: Recording score for previous presenter
-                                      ( request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
-                                        request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && 
-                                        (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) &&
-                                        request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number &&
-                                        request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number &&
-                                        request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
-                                        // Ensure the score being added matches the presenter who just finished
-                                        resource.data.currentPresenterIndex >=0 && resource.data.currentPresenterIndex < resource.data.presenterQueue.size() && // Current presenter must have been valid
-                                        request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.presenterQueue[resource.data.currentPresenterIndex].name &&
-                                        (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.presenterQueue[resource.data.currentPresenterIndex].uid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.presenterQueue[resource.data.currentPresenterIndex].uid == null) ) &&
-                                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'])
-                                      ) ||
-                                      // Case 2: Not recording score (e.g., first presenter started, or admin skipped without scores)
-                                      ( request.resource.data.presenterScores.size() == resource.data.presenterScores.size() && // Scores don't change
-                                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive'])
-                                      )
-                                    ) &&
-                                    request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
-                                  ) ||
-                                  // Reset Current Presenter's Votes OR Reset General Session Votes
-                                  (
-                                      request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 &&
-                                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeClicks', 'dislikeClicks']) &&
-                                      request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.presenterQueue == resource.data.presenterQueue && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
-                                  ) ||
-                                  // Admin kicking a participant
-                                  (
-                                    request.resource.data.diff(resource.data).affectedKeys().hasAny(['participants', 'presenterQueue', 'currentPresenterIndex']) && 
-                                    (request.auth.uid in resource.data.participants ? request.auth.uid in request.resource.data.participants : true) && // Admin themself is not being kicked
-                                    request.resource.data.participants.keys().size() < resource.data.participants.keys().size() &&
-                                    // ensure other critical fields are unchanged
-                                    request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks && request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && request.resource.data.votingMode == resource.data.votingMode
-                                  ) ||
-                                  // Admin toggling permanent save status (on session page or results page)
-                                  (
-                                    request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved &&
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
-                                    request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks && request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.sessionEnded == resource.data.sessionEnded && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.presenterQueue == resource.data.presenterQueue && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.votingMode == resource.data.votingMode
+                                    ( request.resource.data.diff(resource.data).affectedKeys().hasAny(['likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores']) ) ?
+                                    ( request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && request.resource.data.isRoundActive == true && 
+                                      (request.resource.data.diff(resource.data).affectedKeys().has('presenterScores') ? request.resource.data.presenterScores.size() == 0 : true)
+                                    ) 
+                                    : true // If these fields are not part of the diff, no specific value check needed for them
                                   )
+                                ) ||
+                                // Advancing Presenter ("Start Next Feedback Round")
+                                (
+                                  request.resource.data.presenterQueue == resource.data.presenterQueue && // Queue itself doesn't change here
+                                  request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex + 1 && 
+                                  request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && 
+                                  (
+                                    // Case 1: Recording score for previous presenter
+                                    ( request.resource.data.presenterScores.size() == resource.data.presenterScores.size() + 1 &&
+                                      request.resource.data.presenterScores[resource.data.presenterScores.size()].name is string && 
+                                      (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid is string || request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null) &&
+                                      request.resource.data.presenterScores[resource.data.presenterScores.size()].likes is number &&
+                                      request.resource.data.presenterScores[resource.data.presenterScores.size()].dislikes is number &&
+                                      request.resource.data.presenterScores[resource.data.presenterScores.size()].netScore is number &&
+                                      // Ensure the score being added matches the presenter who just finished
+                                      resource.data.currentPresenterIndex >=0 && resource.data.currentPresenterIndex < resource.data.presenterQueue.size() && // Current presenter must have been valid
+                                      request.resource.data.presenterScores[resource.data.presenterScores.size()].name == resource.data.presenterQueue[resource.data.currentPresenterIndex].name &&
+                                      (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == resource.data.presenterQueue[resource.data.currentPresenterIndex].uid || (request.resource.data.presenterScores[resource.data.presenterScores.size()].uid == null && resource.data.presenterQueue[resource.data.currentPresenterIndex].uid == null) ) &&
+                                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores'])
+                                    ) ||
+                                    // Case 2: Not recording score (e.g., first presenter started, or admin skipped without scores)
+                                    ( request.resource.data.presenterScores.size() == resource.data.presenterScores.size() && // Scores don't change
+                                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentPresenterIndex', 'likeClicks', 'dislikeClicks', 'isRoundActive'])
+                                    )
+                                  ) &&
+                                  // Round becomes active if there is a next presenter, otherwise it should be false
+                                  request.resource.data.isRoundActive == (request.resource.data.currentPresenterIndex < request.resource.data.presenterQueue.size())
+                                ) ||
+                                // Reset Current Presenter's Votes OR Reset General Session Votes
+                                (
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeClicks', 'dislikeClicks']) &&
+                                  request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0
+                                ) ||
+                                // Admin kicking a participant
+                                (
+                                  request.resource.data.diff(resource.data).affectedKeys().hasAny(['participants', 'presenterQueue', 'currentPresenterIndex']) && 
+                                  (request.auth.uid in resource.data.participants ? request.auth.uid in request.resource.data.participants : true) && // Admin themself is not being kicked
+                                  request.resource.data.participants.keys().size() < resource.data.participants.keys().size() &&
+                                  // if presenterQueue or currentPresenterIndex changed, ensure likeClicks/dislikeClicks were reset
+                                  ( (request.resource.data.presenterQueue != resource.data.presenterQueue || request.resource.data.currentPresenterIndex != resource.data.currentPresenterIndex) ?
+                                      (request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0)
+                                      : (request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks)
+                                  )
+                                ) ||
+                                // Admin toggling permanent save status (on session page)
+                                (
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
+                                  request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved
                                 )
-                              ) ||
-                              // User voting actions
+                                // Ensure other critical fields not explicitly part of the diff are unchanged for ALL admin ops above
+                                // These are checked if not part of the hasOnly list for the specific action
+                                // (This is a safeguard - hasOnly should be the primary check)
+                                && (
+                                  request.resource.data.diff(resource.data).affectedKeys().has('adminUid') ? request.resource.data.adminUid == resource.data.adminUid : true
+                                ) && (
+                                  request.resource.data.diff(resource.data).affectedKeys().has('createdAt') ? request.resource.data.createdAt == resource.data.createdAt : true
+                                ) && (
+                                  request.resource.data.diff(resource.data).affectedKeys().has('sessionType') ? request.resource.data.sessionType == resource.data.sessionType : true
+                                )
+                                // And ensure certain fields ARE NOT CHANGED unless the specific rule above allows it
+                                && (
+                                  !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminUid', 'createdAt', 'sessionType'])
+                                )
+
+                              )) || // END OF ADMIN ACTIONS WHEN SESSION NOT ENDED
+
+                              // USER VOTING ACTIONS
                               (
                                 request.resource.data.isRoundActive == true && 
                                 resource.data.isRoundActive == true && 
+                                resource.data.sessionEnded == false && // Session must not be ended
                                 ( // Check if voting is generally allowed or specific presenter is active
                                   (resource.data.presenterQueue.size() == 0) || // General feedback mode
                                   ( resource.data.presenterQueue.size() > 0 &&
@@ -239,30 +240,30 @@ ClassVote is a real-time, interactive web application where users create or join
                                 ) &&
                                 ( 
                                   ( 
-                                    request.resource.data.likeClicks == resource.data.likeClicks + 1 &&
-                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeClicks'])
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeClicks']) &&
+                                    request.resource.data.likeClicks == resource.data.likeClicks + 1
                                   ) ||
                                   ( 
-                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks + 1 &&
-                                    request.resource.data.likeClicks == resource.data.likeClicks &&
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dislikeClicks'])
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dislikeClicks']) &&
+                                    request.resource.data.dislikeClicks == resource.data.dislikeClicks + 1
                                   )
-                                ) &&
-                                request.resource.data.adminUid == resource.data.adminUid &&
-                                request.resource.data.sessionEnded == resource.data.sessionEnded &&
-                                request.resource.data.createdAt == resource.data.createdAt &&
-                                request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                request.resource.data.sessionType == resource.data.sessionType &&
-                                request.resource.data.participants == resource.data.participants && 
-                                request.resource.data.presenterQueue == resource.data.presenterQueue &&
-                                request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex &&
-                                request.resource.data.presenterScores == resource.data.presenterScores &&
-                                request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved &&
-                                request.resource.data.votingMode == resource.data.votingMode 
+                                )
+                                // Ensure other fields are unchanged
+                                && request.resource.data.adminUid == resource.data.adminUid 
+                                && request.resource.data.sessionEnded == resource.data.sessionEnded 
+                                && request.resource.data.createdAt == resource.data.createdAt 
+                                && request.resource.data.soundsEnabled == resource.data.soundsEnabled 
+                                && request.resource.data.resultsVisible == resource.data.resultsVisible 
+                                && request.resource.data.sessionType == resource.data.sessionType 
+                                && request.resource.data.participants == resource.data.participants 
+                                && request.resource.data.presenterQueue == resource.data.presenterQueue 
+                                && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex 
+                                && request.resource.data.presenterScores == resource.data.presenterScores 
+                                && request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved 
+                                && request.resource.data.votingMode == resource.data.votingMode 
                               ) ||
-                              // User setting their own nickname
+
+                              // USER SETTING THEIR OWN NICKNAME
                               (
                                 // 1. Only the 'participants' field at the top level of the document is being changed.
                                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
@@ -277,10 +278,9 @@ ClassVote is a real-time, interactive web application where users create or join
 
                                 // 3. Logic for 'joinedAt': set on first join, immutable after.
                                 (
-                                  // If user was not in participants map before, or their 'joinedAt' was null (or not set)
-                                  (!(request.auth.uid in resource.data.participants)) ||
-                                  (request.auth.uid in resource.data.participants && !('joinedAt' in resource.data.participants[request.auth.uid])) ||
-                                  (request.auth.uid in resource.data.participants && resource.data.participants[request.auth.uid].joinedAt == null)
+                                  (!(request.auth.uid in resource.data.participants)) || // User was not in participants map before
+                                  (request.auth.uid in resource.data.participants && !('joinedAt' in resource.data.participants[request.auth.uid])) || // or their 'joinedAt' was not set
+                                  (request.auth.uid in resource.data.participants && resource.data.participants[request.auth.uid].joinedAt == null) // or was null
                                 ) ? request.resource.data.participants[request.auth.uid].joinedAt == request.time
                                   : request.resource.data.participants[request.auth.uid].joinedAt == resource.data.participants[request.auth.uid].joinedAt &&
 
@@ -291,7 +291,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                   (resource.data.participants != null && request.resource.data.participants.diff(resource.data.participants).affectedKeys().hasOnly([request.auth.uid]))
                                 ) &&
 
-                                // 5. Ensure other top-level critical fields are unchanged
+                                // 5. Ensure other top-level critical fields are unchanged (already implicitly covered by #1, but explicit for safety)
                                 request.resource.data.likeClicks == resource.data.likeClicks &&
                                 request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
                                 request.resource.data.isRoundActive == resource.data.isRoundActive &&
@@ -307,15 +307,35 @@ ClassVote is a real-time, interactive web application where users create or join
                                 request.resource.data.createdAt == resource.data.createdAt &&
                                 request.resource.data.sessionType == resource.data.sessionType
                               )
-                            ) ||
-                            // This outer OR covers scenarios where the session IS ended, but admin is updating isPermanentlySaved from the /results page
+                            ) || // END OF USER NICKNAME OR USER VOTING ACTIONS
+
+                            // ADMIN ACTION WHEN SESSION *IS* ENDED (e.g., from results page)
                             (
                                 resource.data.adminUid == request.auth.uid &&
-                                resource.data.sessionEnded == true && 
-                                request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved &&
-                                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
-                                request.resource.data.likeClicks == resource.data.likeClicks && request.resource.data.dislikeClicks == resource.data.dislikeClicks && request.resource.data.isRoundActive == resource.data.isRoundActive && request.resource.data.soundsEnabled == resource.data.soundsEnabled && request.resource.data.resultsVisible == resource.data.resultsVisible && request.resource.data.participants == resource.data.participants && request.resource.data.presenterQueue == resource.data.presenterQueue && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && request.resource.data.presenterScores == resource.data.presenterScores && request.resource.data.votingMode == resource.data.votingMode && request.resource.data.sessionType == resource.data.sessionType && request.resource.data.adminUid == resource.data.adminUid && request.resource.data.createdAt == resource.data.createdAt && request.resource.data.sessionEnded == resource.data.sessionEnded // ensure sessionEnded remains true
-                            );
+                                resource.data.sessionEnded == true && // Session is already ended
+                                request.resource.data.sessionEnded == true && // Must remain ended
+                                (
+                                  // Admin toggling permanent save status on an ended session
+                                  (
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
+                                    request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved
+                                  )
+                                )
+                                // Ensure other fields that shouldn't change on an ended session remain the same
+                                && request.resource.data.likeClicks == resource.data.likeClicks 
+                                && request.resource.data.dislikeClicks == resource.data.dislikeClicks 
+                                && request.resource.data.isRoundActive == resource.data.isRoundActive // Should be false and stay false
+                                && request.resource.data.soundsEnabled == resource.data.soundsEnabled 
+                                && request.resource.data.resultsVisible == resource.data.resultsVisible 
+                                && request.resource.data.participants == resource.data.participants 
+                                && request.resource.data.presenterQueue == resource.data.presenterQueue 
+                                && request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex 
+                                && request.resource.data.presenterScores == resource.data.presenterScores 
+                                && request.resource.data.votingMode == resource.data.votingMode 
+                                && request.resource.data.sessionType == resource.data.sessionType 
+                                && request.resource.data.adminUid == resource.data.adminUid 
+                                && request.resource.data.createdAt == resource.data.createdAt
+                            ); // END OF ALL UPDATE CONDITIONS
 
               allow delete: if request.auth.uid == resource.data.adminUid;
             }
@@ -504,6 +524,7 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
 
 
 
