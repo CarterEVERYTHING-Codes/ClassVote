@@ -3,15 +3,15 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { SessionData } from '@/app/session/[sessionId]/page'; 
+// Removed: import type { SessionData } from '@/app/session/[sessionId]/page'; 
 
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
   soundsEnabled: boolean;
   roundId?: number; 
-  votingMode: SessionData['votingMode'];
-  generalRoundInstanceId?: number; // New prop
+  votingMode: 'single' | 'infinite'; // Directly defined type
+  generalRoundInstanceId?: number; 
 }
 
 const GoodBadButtons = dynamic<GoodBadButtonsProps>(() => import('@/components/good-bad-buttons'), {

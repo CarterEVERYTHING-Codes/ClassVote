@@ -14,14 +14,14 @@ import {
   getDoc,
   FirestoreError,
 } from "firebase/firestore";
-import type { SessionData } from '@/app/session/[sessionId]/page';
+// Removed: import type { SessionData } from '@/app/session/[sessionId]/page';
 
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
   soundsEnabled: boolean;
   roundId?: number; 
-  votingMode: SessionData['votingMode'];
+  votingMode: 'single' | 'infinite'; // Directly defined type
   generalRoundInstanceId?: number; 
 }
 
@@ -42,31 +42,35 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
   const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
   
   const getLocalStorageKey = useCallback(() => {
+    // If roundId is -1 (general session) or undefined (could happen if not passed correctly),
+    // use generalRoundInstanceId to make the key unique per general round instance.
     if (roundId === -1 || roundId === undefined) { 
       return `hasVoted_${sessionId}_general_${generalRoundInstanceId}`;
     }
+    // Otherwise, it's a specific presenter round.
     return `hasVoted_${sessionId}_${roundId}`; 
   }, [sessionId, roundId, generalRoundInstanceId]);
 
   useEffect(() => {
-    console.log("[GoodBadButtons EFFECT] Triggered with props:", { isRoundActiveProp, roundId, sessionId, votingMode, generalRoundInstanceId });
+    // console.log("[GoodBadButtons EFFECT] Triggered with props:", { isRoundActiveProp, roundId, sessionId, votingMode, generalRoundInstanceId });
     setInternalIsRoundActive(isRoundActiveProp);
     const currentKey = getLocalStorageKey();
-    console.log("[GoodBadButtons EFFECT] localStorageKey:", currentKey);
+    // console.log("[GoodBadButtons EFFECT] localStorageKey:", currentKey);
 
     if (votingMode === 'single') {
       if (isRoundActiveProp) {
         const votedInThisSpecificRound = localStorage.getItem(currentKey) === 'true';
-        console.log(`[GoodBadButtons EFFECT] localStorage.getItem('${currentKey}') found:`, localStorage.getItem(currentKey));
+        // console.log(`[GoodBadButtons EFFECT] localStorage.getItem('${currentKey}') found:`, localStorage.getItem(currentKey));
         setHasVotedInCurrentRound(votedInThisSpecificRound);
-        console.log("[GoodBadButtons EFFECT] Setting hasVotedInCurrentRound to:", votedInThisSpecificRound);
+        // console.log("[GoodBadButtons EFFECT] Setting hasVotedInCurrentRound to:", votedInThisSpecificRound);
       } else {
+        // If the round is not active, they haven't voted in *this* instance of it.
         setHasVotedInCurrentRound(false); 
-        console.log("[GoodBadButtons EFFECT] isRoundActiveProp is false, setting hasVotedInCurrentRound to false");
+        // console.log("[GoodBadButtons EFFECT] isRoundActiveProp is false, setting hasVotedInCurrentRound to false");
       }
-    } else { 
-      setHasVotedInCurrentRound(false); 
-      console.log("[GoodBadButtons EFFECT] votingMode is not 'single', setting hasVotedInCurrentRound to false");
+    } else { // Infinite voting mode
+      setHasVotedInCurrentRound(false); // In infinite mode, they can always vote.
+      // console.log("[GoodBadButtons EFFECT] votingMode is not 'single', setting hasVotedInCurrentRound to false");
     }
   }, [isRoundActiveProp, roundId, sessionId, votingMode, generalRoundInstanceId, getLocalStorageKey]);
 
@@ -136,8 +140,8 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
       const currentSessionDoc = await getDoc(sessionDocRef);
       if (!currentSessionDoc.exists() || !currentSessionDoc.data()?.isRoundActive) {
         toast({ title: "Vote Not Counted", description: "The feedback round may have just closed or the session has ended.", variant: "default" });
-        setInternalIsRoundActive(false); 
-        if (votingMode === 'single') setHasVotedInCurrentRound(false);
+        setInternalIsRoundActive(false); // Sync internal state
+        if (votingMode === 'single') setHasVotedInCurrentRound(false); // Reset vote status if round closed
         return false;
       }
 
@@ -146,7 +150,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
       });
       if (votingMode === 'single') {
         const currentKey = getLocalStorageKey();
-        localStorage.setItem(currentKey, 'true'); 
+        localStorage.setItem(currentKey, 'true'); // Mark as voted for this specific round instance
         setHasVotedInCurrentRound(true);
       }
       return true;
@@ -157,21 +161,23 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
       } else {
           toast({ title: "Score Update Error", description: "Could not update score.", variant: "destructive" });
       }
+      // Attempt to re-sync round active status from Firestore on error
       try {
         const currentSessionDoc = await getDoc(sessionDocRef);
         if (currentSessionDoc.exists()) {
           const isActive = currentSessionDoc.data()?.isRoundActive ?? false;
           setInternalIsRoundActive(isActive);
           if (!isActive && votingMode === 'single') {
+            // If round is now inactive, reset local vote status
             setHasVotedInCurrentRound(false);
           }
-        } else { 
-          setInternalIsRoundActive(false);
+        } else { // Session doc doesn't exist anymore
+          setInternalIsRoundActive(false); 
           if (votingMode === 'single') setHasVotedInCurrentRound(false);
         }
       } catch (docReadError) {
         console.error("Error re-reading session doc for state sync:", docReadError);
-         setInternalIsRoundActive(false); 
+         setInternalIsRoundActive(false); // Fallback
          if (votingMode === 'single') setHasVotedInCurrentRound(false);
       }
       return false;
