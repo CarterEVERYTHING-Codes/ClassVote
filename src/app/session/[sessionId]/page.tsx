@@ -102,6 +102,8 @@ export default function SessionPage() {
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
   const [showKickConfirmDialog, setShowKickConfirmDialog] = useState(false);
   const [participantToKick, setParticipantToKick] = useState<ParticipantToKick | null>(null);
+  const [generalRoundVoteResetTrigger, setGeneralRoundVoteResetTrigger] = useState(0);
+
 
   useEffect(() => {
     if (!sessionId) {
@@ -591,7 +593,7 @@ export default function SessionPage() {
         // Clear localStorage for the general round (roundId -1) to allow voting again
         const localStorageKeyForGeneralRound = `hasVoted_${sessionId}_-1`;
         localStorage.removeItem(localStorageKeyForGeneralRound);
-
+        setGeneralRoundVoteResetTrigger(prevKey => prevKey + 1); // Increment trigger
     }, "Session restarted for general feedback. Votes reset, round is active, and you can vote again.", "Could not restart session.");
   };
 
@@ -832,6 +834,7 @@ export default function SessionPage() {
                     soundsEnabled={sessionData.soundsEnabled}
                     roundId={sessionData?.currentPresenterIndex ?? -1}
                     votingMode={sessionData.votingMode}
+                    generalRoundVoteResetTrigger={generalRoundVoteResetTrigger}
                 />
             </div>
         )}

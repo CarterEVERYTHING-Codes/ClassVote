@@ -11,6 +11,7 @@ interface GoodBadButtonsProps {
   soundsEnabled: boolean;
   roundId?: number; 
   votingMode: SessionData['votingMode']; // Use the specific type from SessionData
+  generalRoundVoteResetTrigger?: number; // New prop
 }
 
 const GoodBadButtons = dynamic<GoodBadButtonsProps>(() => import('@/components/good-bad-buttons'), {

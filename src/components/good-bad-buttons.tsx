@@ -22,9 +22,17 @@ interface GoodBadButtonsProps {
   soundsEnabled: boolean;
   roundId?: number; 
   votingMode: SessionData['votingMode']; // Use specific type
+  generalRoundVoteResetTrigger?: number; // New prop
 }
 
-const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActive: isRoundActiveProp, soundsEnabled, roundId, votingMode }) => {
+const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ 
+    sessionId, 
+    isRoundActive: isRoundActiveProp, 
+    soundsEnabled, 
+    roundId, 
+    votingMode,
+    generalRoundVoteResetTrigger 
+}) => {
   const { toast } = useToast();
   const likeSynth = useRef<Tone.Synth | null>(null);
   const dislikeSynth = useRef<Tone.Synth | null>(null);
@@ -34,20 +42,37 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ sessionId, isRoundActiv
   const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
   const localStorageKey = `hasVoted_${sessionId}_${roundId ?? 'general'}`;
 
+  // Store the previous value of generalRoundVoteResetTrigger to detect changes
+  const prevTriggerRef = useRef<number | undefined>(generalRoundVoteResetTrigger);
+
   useEffect(() => {
     setInternalIsRoundActive(isRoundActiveProp);
 
-    if (votingMode === 'single') {
+    // Check if the trigger has changed specifically for the general round
+    if (
+        votingMode === 'single' &&
+        roundId === -1 && // General session round ID
+        generalRoundVoteResetTrigger !== undefined &&
+        prevTriggerRef.current !== generalRoundVoteResetTrigger
+      ) {
+        console.log(`[GoodBadButtons EFFECT] General round reset triggered (key: ${generalRoundVoteResetTrigger}). Forcing hasVotedInCurrentRound to false.`);
+        setHasVotedInCurrentRound(false);
+        // Update the ref to the new trigger value
+        prevTriggerRef.current = generalRoundVoteResetTrigger;
+    } else if (votingMode === 'single') {
       if (isRoundActiveProp) {
         const votedInThisSpecificRound = localStorage.getItem(localStorageKey) === 'true';
+        console.log(`[GoodBadButtons EFFECT] Triggered. isRoundActiveProp: ${isRoundActiveProp}, roundId: ${roundId}, localStorageKey: '${localStorageKey}', votingMode: ${votingMode}, generalRoundVoteResetTrigger: ${generalRoundVoteResetTrigger}`);
+        console.log(`[GoodBadButtons EFFECT] localStorage.getItem('${localStorageKey}') found:`, localStorage.getItem(localStorageKey));
         setHasVotedInCurrentRound(votedInThisSpecificRound);
+        console.log(`[GoodBadButtons EFFECT] Setting hasVotedInCurrentRound to:`, votedInThisSpecificRound);
       } else {
-        setHasVotedInCurrentRound(false);
+        setHasVotedInCurrentRound(false); // If round is not active, reset voting flag
       }
     } else { // Infinite voting mode
       setHasVotedInCurrentRound(false); // Always allow voting
     }
-  }, [isRoundActiveProp, roundId, sessionId, localStorageKey, votingMode]);
+  }, [isRoundActiveProp, roundId, sessionId, localStorageKey, votingMode, generalRoundVoteResetTrigger]);
 
 
   useEffect(() => {
