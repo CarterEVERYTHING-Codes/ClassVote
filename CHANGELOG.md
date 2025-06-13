@@ -27,3 +27,4 @@ All notable changes to this project will be documented in this file.
 - Results page for admins to view past sessions and for users to see their presentation scores.
 - Account management page.
 - Theme toggling (light/dark/system).
+
