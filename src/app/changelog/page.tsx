@@ -62,7 +62,6 @@ export default function ChangelogPage() {
           <CardTitle>Application Changelog</CardTitle>
           <CardDescription>
             Tracks notable features, improvements, and bug fixes.
-            Make sure `CHANGELOG.md` is in your `public` folder.
           </CardDescription>
         </CardHeader>
         <CardContent>
