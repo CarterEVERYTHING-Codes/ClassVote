@@ -47,6 +47,12 @@ ClassVote is a real-time, interactive web application where users create or join
         rules_version = '2';
         service cloud.firestore {
           match /databases/{database}/documents {
+            // Rule for health check path
+            match /_internal_health_check/{docId} {
+              allow read: if true; 
+              allow write: if false;
+            }
+
             match /sessions/{sessionId} {
               allow read: if request.auth != null; 
 
@@ -374,6 +380,7 @@ ClassVote is a real-time, interactive web application where users create or join
     *   A history of their own presentation scores from past sessions where their name/account was matched.
 *   **Account Page (`/account`):** Logged-in (non-anonymous) users can manage their account, including sending a password reset email (for email/password accounts) and deleting their account.
 *   **Changelog Page (`/changelog`):** Displays the application's update history by fetching and rendering `public/CHANGELOG.md`.
+*   **Initial Server Check:** On app load, a quick check is made to Firestore. If unreachable, a global error page is displayed.
 
 ## Next Steps (Future Enhancements - Requires Server-Side Implementation)
 
@@ -466,6 +473,7 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
 
 
 
