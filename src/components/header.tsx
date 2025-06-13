@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogIn, LogOut, UserCircle, LifeBuoy, BarChart3, Settings, ChevronDown } from 'lucide-react';
+import { LogIn, LogOut, UserCircle, LifeBuoy, BarChart3, Settings, ChevronDown, ScrollText } from 'lucide-react';
 import { ThemeToggleButton } from './theme-toggle-button';
 import {
   DropdownMenu,
@@ -60,6 +60,24 @@ const Header: React.FC = () => {
               <TooltipContent>
                 <p>Feedback / Report Bug</p>
               </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="px-2 sm:px-3"
+                        onClick={() => router.push('/changelog')}
+                    >
+                        <ScrollText className="h-[1.2rem] w-[1.2rem] mr-1 sm:mr-2" />
+                        <span className="hidden sm:inline">Changelog</span>
+                        <span className="sm:hidden text-xs">Updates</span>
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>View Application Updates</p>
+                </TooltipContent>
             </Tooltip>
           </TooltipProvider>
 

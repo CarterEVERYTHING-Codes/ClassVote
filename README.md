@@ -9,6 +9,7 @@ ClassVote is a real-time, interactive web application where users create or join
 *   **UI:** ShadCN UI Components, Tailwind CSS
 *   **Real-time Backend:** Firebase (Firestore for database, Firebase Authentication for anonymous and Google users)
 *   **Audio:** Tone.js for sound feedback on votes
+*   **Markdown Rendering:** `react-markdown` with `remark-gfm`
 
 ## Project Setup & Running Locally
 
@@ -66,7 +67,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                request.resource.data.presenterScores is list && request.resource.data.presenterScores.size() == 0 &&
                                request.resource.data.isPermanentlySaved == false &&
                                request.resource.data.votingMode == 'single' && 
-                               request.resource.data.generalRoundInstanceId == 1 && // Added for generalRoundInstanceId
+                               request.resource.data.generalRoundInstanceId == 1 &&
                                request.resource.data.createdAt == request.time;
 
               allow update: if request.auth != null && (
@@ -201,6 +202,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                 (
                                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved'])
                                 )
+                                // Ensuring other crucial fields aren't changed accidentally by these simpler rules
                                 && ( 
                                   !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminUid', 'createdAt', 'sessionType']) &&
                                   ( // generalRoundInstanceId should only change if it's the *only* other field in the "Restart Session" diff
@@ -329,19 +331,22 @@ ClassVote is a real-time, interactive web application where users create or join
     ```
     The application will typically be available at `http://localhost:9002` or your Cloud Workstation URL.
 
+5.  **(For Changelog Page)** **Move `CHANGELOG.md`**: Manually move the `CHANGELOG.md` file from the root of your project into the `public` folder (`public/CHANGELOG.md`). This step is necessary for the new Changelog page to fetch and display its content.
+
+
 ## Key Features
 
 *   Create new voting sessions with a unique 6-digit code (either anonymously or linked to a Google account). Participants join at `classvote.online`.
 *   Join existing sessions using the code at `classvote.online`.
 *   **Mandatory Nicknames:** Users must enter a unique nickname (per session) before participating. Nicknames are immutable once set.
 *   **Presenter Queue Management:** Admin can add participants (who have set a nickname) to an ordered presenter queue. Admin can remove presenters from the queue or clear it entirely.
-*   **Voting Modes:** Admin can set the session to "Single Vote per Round" (default, one vote per user per presenter) or "Infinite Votes per Round" (users can vote multiple times for the current presenter).
+*   **Voting Modes:** Admin can set the session to "Single Vote per Round" (default, one vote per user per presenter/general round instance) or "Infinite Votes per Round" (users can vote multiple times for the current presenter/general round).
 *   **Round Controls (Contextual):**
     *   If Presenter Queue is active:
         *   "Start Next Feedback Round": Records scores for the current presenter, advances to the next, resets like/dislike counts, and opens voting. Handles end of queue.
         *   "Reset Current Presenter's Votes": Resets like/dislike counts for the active presenter without recording scores or advancing.
     *   If Presenter Queue is empty (General Feedback Mode):
-        *   "Restart Session": Resets like/dislike counts, increments `generalRoundInstanceId`, and ensures the voting round is active, allowing all users to vote again in the new instance of the general round.
+        *   "Restart Session": Resets like/dislike counts, increments a `generalRoundInstanceId` in Firestore (which resets voting for all users for the general round), and ensures the voting round is active.
 *   Current presenter's name (if any) is displayed to all participants.
 *   Real-time "like" and "dislike" voting.
 *   Admin controls for vote sounds (on/off) and live results visibility (show/hide).
@@ -363,11 +368,12 @@ ClassVote is a real-time, interactive web application where users create or join
 *   Authentication via Firebase (Anonymous, Google Sign-In, Email/Password).
 *   Informational tooltips for admin controls.
 *   **Participant Count Display:** Shows the current number of participants in the session.
-*   Global header with Login/Logout (to `/auth` page), Feedback link, Results link (for logged-in users), and theme toggle.
+*   Global header with Login/Logout (to `/auth` page), Feedback link, Results link (for logged-in users), Changelog link, and theme toggle.
 *   **Results Page (`/results`):** Logged-in (non-anonymous) users can view:
     *   A history of sessions they administered (account sessions or those they manually saved), including the overall presenter scores for each. Admins can toggle a session to be "Permanently Saved" or delete it.
     *   A history of their own presentation scores from past sessions where their name/account was matched.
 *   **Account Page (`/account`):** Logged-in (non-anonymous) users can manage their account, including sending a password reset email (for email/password accounts) and deleting their account.
+*   **Changelog Page (`/changelog`):** Displays the application's update history by fetching and rendering `public/CHANGELOG.md`.
 
 ## Next Steps (Future Enhancements - Requires Server-Side Implementation)
 
@@ -460,6 +466,7 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
 
 
 
