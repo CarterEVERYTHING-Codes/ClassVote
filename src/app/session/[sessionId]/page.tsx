@@ -29,11 +29,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
     Play, Pause, ShieldAlert, Trash2, Copy, Home, Users, Volume2, VolumeX, Eye, EyeOff,
-    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus, Save, RotateCcw, ListX, ListOrdered
+    ListChecks, ChevronsRight, Info, UserPlusIcon, LogIn, UserX, Settings, ListPlus, Save, RotateCcw, ListX, ListOrdered, RefreshCw
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"; // Added TooltipContent
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 
@@ -576,15 +576,19 @@ export default function SessionPage() {
     }, `Votes for current presenter (${sessionData.presenterQueue[sessionData.currentPresenterIndex].name}) have been reset.`, "Could not reset current presenter votes.");
   };
 
-  const handleResetGeneralSessionVotes = () => {
+  const handleRestartSession = () => {
      if (!isCurrentUserAdmin || !sessionData || (sessionData.presenterQueue && sessionData.presenterQueue.length > 0)) {
         toast({ title: "Action Failed", description: "This action is for general feedback mode (empty presenter queue).", variant: "destructive" });
         return;
     }
     handleAdminAction(async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
-        await updateDoc(sessionDocRef, { likeClicks: 0, dislikeClicks: 0 });
-    }, "General session votes have been reset.", "Could not reset general session votes.");
+        await updateDoc(sessionDocRef, { 
+            likeClicks: 0, 
+            dislikeClicks: 0,
+            isRoundActive: true // Ensure round is active
+        });
+    }, "Session restarted. Votes reset, and voting is now active.", "Could not restart session.");
   };
 
   if (authLoading || (isLoadingSession && !sessionData)) { 
@@ -748,7 +752,7 @@ export default function SessionPage() {
     sessionStatusMessage = "Waiting for admin to start presentations."
   }
   else { 
-    presenterDisplayMessage = isCurrentUserAdmin ? "General feedback. Add presenters or reset votes." : "General feedback session.";
+    presenterDisplayMessage = isCurrentUserAdmin ? "General feedback. Add presenters or restart session." : "General feedback session.";
     sessionStatusMessage = sessionData.isRoundActive ? "General feedback round is OPEN. Cast your vote!" : "General feedback round is PAUSED.";
   }
 
@@ -995,15 +999,15 @@ export default function SessionPage() {
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <Button
-                                            onClick={handleResetGeneralSessionVotes}
+                                            onClick={handleRestartSession}
                                             variant="outline"
                                             className="w-full text-sm"
                                             disabled={isProcessingAdminAction}
                                         >
-                                            <RotateCcw className="mr-2 h-4 w-4" /> Reset General Session Votes
+                                            <RefreshCw className="mr-2 h-4 w-4" /> Restart Session
                                         </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent><p>Reset like/dislike counts for the current general feedback session.</p></TooltipContent>
+                                    <TooltipContent><p>Resets all votes for the general session and re-opens voting. Use when not managing a presenter queue.</p></TooltipContent>
                                 </Tooltip>
                            )}
                             <div className="flex items-center space-x-2 pt-2">

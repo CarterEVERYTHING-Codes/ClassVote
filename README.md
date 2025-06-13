@@ -82,7 +82,8 @@ ClassVote is a real-time, interactive web application where users create or join
                                   (
                                     // Case 1: Ending without adding a new presenter score (e.g., no active presenter, or queue was empty)
                                     (
-                                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) 
+                                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) &&
+                                      request.resource.data.presenterScores == resource.data.presenterScores // Ensure scores are not changed here
                                     ) ||
                                     // Case 2: Ending AND adding a new presenter score
                                     (
@@ -182,10 +183,20 @@ ClassVote is a real-time, interactive web application where users create or join
                                   // Round becomes active if there is a next presenter, otherwise it should be false
                                   request.resource.data.isRoundActive == (request.resource.data.currentPresenterIndex < request.resource.data.presenterQueue.size())
                                 ) ||
-                                // Reset Current Presenter's Votes OR Reset General Session Votes
+                                // Admin Resetting Current Presenter's Votes (when presenter queue is active)
                                 (
+                                  resource.data.presenterQueue.size() > 0 &&
+                                  resource.data.currentPresenterIndex >= 0 && resource.data.currentPresenterIndex < resource.data.presenterQueue.size() && // A presenter must be active
                                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeClicks', 'dislikeClicks']) &&
                                   request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0
+                                ) ||
+                                // Admin Restarting General Session (when presenter queue is empty)
+                                (
+                                  resource.data.presenterQueue.size() == 0 && // Only for general feedback mode
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeClicks', 'dislikeClicks', 'isRoundActive']) &&
+                                  request.resource.data.likeClicks == 0 &&
+                                  request.resource.data.dislikeClicks == 0 &&
+                                  request.resource.data.isRoundActive == true
                                 ) ||
                                 // Admin kicking a participant
                                 (
@@ -387,7 +398,7 @@ ClassVote is a real-time, interactive web application where users create or join
         *   "Start Next Feedback Round": Records scores for the current presenter, advances to the next, resets like/dislike counts, and opens voting. Handles end of queue.
         *   "Reset Current Presenter's Votes": Resets like/dislike counts for the active presenter without recording scores or advancing.
     *   If Presenter Queue is empty (General Feedback Mode):
-        *   "Reset General Session Votes": Resets like/dislike counts for the session.
+        *   "Restart Session": Resets like/dislike counts for the session and ensures the voting round is active.
 *   Current presenter's name (if any) is displayed to all participants.
 *   Real-time "like" and "dislike" voting.
 *   Admin controls for vote sounds (on/off) and live results visibility (show/hide).
@@ -506,6 +517,7 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
 
 
 
