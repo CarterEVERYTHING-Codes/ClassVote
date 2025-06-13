@@ -4,6 +4,7 @@
 All notable changes to this project will be documented in this file.
 
 ## [v0.1.5] - YYYY-MM-DD
+
 ### Fixed
 - Resolved issue where "Restart Session" for general feedback rounds only reset voting for the admin, not other participants. Implemented `generalRoundInstanceId` in Firestore and client-side logic to correctly invalidate votes for all users on restart.
 - Corrected syntax error (`catch (error) => {`) in `AuthContext`'s `signOut` function.
