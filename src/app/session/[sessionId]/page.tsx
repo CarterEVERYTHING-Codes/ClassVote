@@ -588,7 +588,11 @@ export default function SessionPage() {
             dislikeClicks: 0,
             isRoundActive: true // Ensure round is active
         });
-    }, "Session restarted. Votes reset, and voting is now active.", "Could not restart session.");
+        // Clear localStorage for the general round (roundId -1) to allow voting again
+        const localStorageKeyForGeneralRound = `hasVoted_${sessionId}_-1`;
+        localStorage.removeItem(localStorageKeyForGeneralRound);
+
+    }, "Session restarted for general feedback. Votes reset, round is active, and you can vote again.", "Could not restart session.");
   };
 
   if (authLoading || (isLoadingSession && !sessionData)) { 
