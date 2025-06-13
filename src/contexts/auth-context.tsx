@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, AuthError } from 'firebase/auth';
 import { 
   auth, 
-  db, // Import db
+  db, 
   googleProvider, 
   signInWithPopup, 
   firebaseSignOut, 
@@ -16,12 +16,15 @@ import {
   sendPasswordResetEmail as firebaseSendPasswordResetEmail,
   deleteUser as firebaseDeleteUser
 } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore'; // Import doc and getDoc
+import { doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 
 interface AuthContextType {
   user: User | null;
-  loading: boolean; // True if either auth state or initial server check is pending
+  loading: boolean;
   isAnonymousGuest: boolean;
   signInWithGoogle: () => Promise<User | null>;
   signUpWithEmail: (email: string, password: string) => Promise<User | null>;
@@ -51,34 +54,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     const checkServerStatus = async () => {
-      // Only run the check if it's pending
       if (initialServerCheckStatus !== 'pending') return;
 
       try {
-        // This path is for health check. It doesn't need to exist.
-        // Rules should allow a read attempt even if it results in "not found".
-        // We are testing connectivity.
         const healthCheckDocRef = doc(db, '_internal_health_check/status_test_doc');
         await getDoc(healthCheckDocRef); 
         setInitialServerCheckStatus('success');
       } catch (err) {
         console.error("Initial server health check failed:", err);
         setInitialServerCheckStatus('error');
-        // Set the error to be thrown in the render cycle
         setServerCheckError(new Error("Failed to connect to ClassVote servers. Please check your internet connection or try again later."));
       }
     };
 
-    // Don't run server check until Firebase auth is initialized to prevent premature errors if db isn't ready
     if (!authLoading && auth && db) {
         checkServerStatus();
     }
-  }, [authLoading, initialServerCheckStatus]); // Depend on authLoading and initialServerCheckStatus
-
-  // If serverCheckError is set, throw it. This will be caught by src/app/error.tsx
-  if (serverCheckError) {
-    throw serverCheckError;
-  }
+  }, [authLoading, initialServerCheckStatus]);
 
   const handleAuthError = (error: AuthError, defaultMessage: string, title: string = "Authentication Error") => {
     console.error("Firebase Auth Error: ", error);
@@ -162,7 +154,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return null;
     }
   };
-
+  
   const signOut = async (): Promise<void> => {
     setAuthLoading(true);
     try {
@@ -238,10 +230,50 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     );
   }
 
+  if (initialServerCheckStatus === 'error' && serverCheckError) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-background">
+        <Card className="w-full max-w-lg shadow-xl text-center">
+          <CardHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 mb-4">
+              <AlertTriangle className="h-8 w-8 text-destructive" />
+            </div>
+            <CardTitle className="text-2xl sm:text-3xl text-destructive">Application Error</CardTitle>
+            <CardDescription className="text-lg text-muted-foreground">
+              We're sorry, but something went wrong.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <p className="text-sm text-muted-foreground">
+              {serverCheckError.message}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+              <Button
+                onClick={() => window.location.reload()}
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Try Again
+              </Button>
+              <Button
+                onClick={() => window.location.href = '/'}
+                className="w-full sm:w-auto"
+              >
+                <Home className="mr-2 h-4 w-4" />
+                Go to Homepage
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
   return (
     <AuthContext.Provider value={{ 
         user, 
-        loading: appIsGloballyLoading, // Propagate combined loading state
+        loading: appIsGloballyLoading,
         isAnonymousGuest, 
         signInWithGoogle, 
         signUpWithEmail, 
@@ -263,3 +295,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
