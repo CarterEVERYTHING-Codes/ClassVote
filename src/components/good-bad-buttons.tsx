@@ -14,15 +14,15 @@ import {
   getDoc,
   FirestoreError,
 } from "firebase/firestore";
-import type { SessionData } from '@/app/session/[sessionId]/page'; // Import SessionData type
+import type { SessionData } from '@/app/session/[sessionId]/page';
 
 interface GoodBadButtonsProps {
   sessionId: string;
   isRoundActive: boolean;
   soundsEnabled: boolean;
   roundId?: number; 
-  votingMode: SessionData['votingMode']; // Use specific type
-  generalRoundVoteResetTrigger?: number; // New prop
+  votingMode: SessionData['votingMode'];
+  generalRoundInstanceId?: number; // New prop
 }
 
 const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ 
@@ -31,7 +31,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
     soundsEnabled, 
     roundId, 
     votingMode,
-    generalRoundVoteResetTrigger 
+    generalRoundInstanceId = 1 // Default to 1 if not provided
 }) => {
   const { toast } = useToast();
   const likeSynth = useRef<Tone.Synth | null>(null);
@@ -40,39 +40,29 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
   const [internalIsRoundActive, setInternalIsRoundActive] = useState(isRoundActiveProp);
   const [isLoadingClick, setIsLoadingClick] = useState(false);
   const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
-  const localStorageKey = `hasVoted_${sessionId}_${roundId ?? 'general'}`;
-
-  // Store the previous value of generalRoundVoteResetTrigger to detect changes
-  const prevTriggerRef = useRef<number | undefined>(generalRoundVoteResetTrigger);
+  
+  const getLocalStorageKey = useCallback(() => {
+    if (roundId === -1 || roundId === undefined) { // General session
+      return `hasVoted_${sessionId}_general_${generalRoundInstanceId}`;
+    }
+    return `hasVoted_${sessionId}_${roundId}`; // Presenter round
+  }, [sessionId, roundId, generalRoundInstanceId]);
 
   useEffect(() => {
     setInternalIsRoundActive(isRoundActiveProp);
+    const currentKey = getLocalStorageKey();
 
-    // Check if the trigger has changed specifically for the general round
-    if (
-        votingMode === 'single' &&
-        roundId === -1 && // General session round ID
-        generalRoundVoteResetTrigger !== undefined &&
-        prevTriggerRef.current !== generalRoundVoteResetTrigger
-      ) {
-        console.log(`[GoodBadButtons EFFECT] General round reset triggered (key: ${generalRoundVoteResetTrigger}). Forcing hasVotedInCurrentRound to false.`);
-        setHasVotedInCurrentRound(false);
-        // Update the ref to the new trigger value
-        prevTriggerRef.current = generalRoundVoteResetTrigger;
-    } else if (votingMode === 'single') {
+    if (votingMode === 'single') {
       if (isRoundActiveProp) {
-        const votedInThisSpecificRound = localStorage.getItem(localStorageKey) === 'true';
-        console.log(`[GoodBadButtons EFFECT] Triggered. isRoundActiveProp: ${isRoundActiveProp}, roundId: ${roundId}, localStorageKey: '${localStorageKey}', votingMode: ${votingMode}, generalRoundVoteResetTrigger: ${generalRoundVoteResetTrigger}`);
-        console.log(`[GoodBadButtons EFFECT] localStorage.getItem('${localStorageKey}') found:`, localStorage.getItem(localStorageKey));
+        const votedInThisSpecificRound = localStorage.getItem(currentKey) === 'true';
         setHasVotedInCurrentRound(votedInThisSpecificRound);
-        console.log(`[GoodBadButtons EFFECT] Setting hasVotedInCurrentRound to:`, votedInThisSpecificRound);
       } else {
-        setHasVotedInCurrentRound(false); // If round is not active, reset voting flag
+        setHasVotedInCurrentRound(false); 
       }
-    } else { // Infinite voting mode
-      setHasVotedInCurrentRound(false); // Always allow voting
+    } else { 
+      setHasVotedInCurrentRound(false); 
     }
-  }, [isRoundActiveProp, roundId, sessionId, localStorageKey, votingMode, generalRoundVoteResetTrigger]);
+  }, [isRoundActiveProp, roundId, sessionId, votingMode, generalRoundInstanceId, getLocalStorageKey]);
 
 
   useEffect(() => {
@@ -149,7 +139,8 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
         [type === 'like' ? 'likeClicks' : 'dislikeClicks']: increment(1)
       });
       if (votingMode === 'single') {
-        localStorage.setItem(localStorageKey, 'true'); 
+        const currentKey = getLocalStorageKey();
+        localStorage.setItem(currentKey, 'true'); 
         setHasVotedInCurrentRound(true);
       }
       return true;

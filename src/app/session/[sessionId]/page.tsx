@@ -73,6 +73,7 @@ interface SessionData {
   presenterScores?: PresenterScore[];
   isPermanentlySaved?: boolean;
   votingMode: 'single' | 'infinite'; 
+  generalRoundInstanceId?: number; // New field for general round invalidation
 }
 
 interface ParticipantToKick {
@@ -102,7 +103,7 @@ export default function SessionPage() {
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
   const [showKickConfirmDialog, setShowKickConfirmDialog] = useState(false);
   const [participantToKick, setParticipantToKick] = useState<ParticipantToKick | null>(null);
-  const [generalRoundVoteResetTrigger, setGeneralRoundVoteResetTrigger] = useState(0);
+  // const [generalRoundVoteResetTrigger, setGeneralRoundVoteResetTrigger] = useState(0); // No longer needed
 
 
   useEffect(() => {
@@ -585,16 +586,19 @@ export default function SessionPage() {
     }
     handleAdminAction(async () => {
         const sessionDocRef = doc(db, 'sessions', sessionId);
+        const currentGeneralRoundInstanceId = sessionData.generalRoundInstanceId || 0;
+        
+        // For admin: Clear local storage for the *current* instance of the general round before it increments
+        const localStorageKeyForAdminCurrentGeneralRound = `hasVoted_${sessionId}_general_${currentGeneralRoundInstanceId}`;
+        localStorage.removeItem(localStorageKeyForAdminCurrentGeneralRound);
+
         await updateDoc(sessionDocRef, { 
             likeClicks: 0, 
             dislikeClicks: 0,
-            isRoundActive: true // Ensure round is active
+            isRoundActive: true, // Ensure round is active
+            generalRoundInstanceId: increment(1) // Increment instance ID
         });
-        // Clear localStorage for the general round (roundId -1) to allow voting again
-        const localStorageKeyForGeneralRound = `hasVoted_${sessionId}_-1`;
-        localStorage.removeItem(localStorageKeyForGeneralRound);
-        setGeneralRoundVoteResetTrigger(prevKey => prevKey + 1); // Increment trigger
-    }, "Session restarted for general feedback. Votes reset, round is active, and you can vote again.", "Could not restart session.");
+    }, "Session restarted for general feedback. Votes reset, round is active, and all users can vote again.", "Could not restart session.");
   };
 
   if (authLoading || (isLoadingSession && !sessionData)) { 
@@ -709,7 +713,8 @@ export default function SessionPage() {
   const { 
     presenterQueue = [], 
     currentPresenterIndex = -1,
-    votingMode = 'single'
+    votingMode = 'single',
+    generalRoundInstanceId = 1 // Default if not present, matches creation
   } = sessionData;
 
   const currentPresenterDetails = (currentPresenterIndex >= 0 && currentPresenterIndex < presenterQueue.length)
@@ -834,7 +839,7 @@ export default function SessionPage() {
                     soundsEnabled={sessionData.soundsEnabled}
                     roundId={sessionData?.currentPresenterIndex ?? -1}
                     votingMode={sessionData.votingMode}
-                    generalRoundVoteResetTrigger={generalRoundVoteResetTrigger}
+                    generalRoundInstanceId={sessionData.generalRoundInstanceId}
                 />
             </div>
         )}

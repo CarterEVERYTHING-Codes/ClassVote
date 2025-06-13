@@ -38,7 +38,7 @@ export default function HomePage() {
       const sessionRef = doc(db, 'sessions', newSessionId);
       await setDoc(sessionRef, {
         adminUid: userForSession.uid,
-        isRoundActive: true, // Default to active for general feedback or first presenter
+        isRoundActive: true, 
         likeClicks: 0,
         dislikeClicks: 0,
         createdAt: serverTimestamp(),
@@ -47,13 +47,12 @@ export default function HomePage() {
         resultsVisible: true,
         participants: {},
         sessionType: isAccountSession ? 'account' : 'quick',
-        presenterQueue: [], // Initialize as empty array
-        currentPresenterIndex: -1, // No presenter active initially
-        // currentPresenterName: "", // Removed, will be derived
-        // currentPresenterUid: null, // Removed, will be derived
+        presenterQueue: [], 
+        currentPresenterIndex: -1, 
         presenterScores: [],
         isPermanentlySaved: false,
-        votingMode: 'single', // New field, default to 'single'
+        votingMode: 'single',
+        generalRoundInstanceId: 1, // Initialize generalRoundInstanceId
       });
       toast({ title: `${isAccountSession ? 'Account' : 'Quick'} Session Created!`, description: `Your session code is ${newSessionId}. Participants join at classvote.online. Redirecting...` });
       router.push(`/session/${newSessionId}`);
