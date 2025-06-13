@@ -73,8 +73,7 @@ ClassVote is a real-time, interactive web application where users create or join
                               (resource.data.adminUid == request.auth.uid && resource.data.sessionEnded == false && (
                                 // Toggle Pause/Resume Feedback 
                                 (
-                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRoundActive']) &&
-                                  request.resource.data.isRoundActive != resource.data.isRoundActive
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRoundActive'])
                                 ) ||
                                 // End session (may add final presenter score)
                                 (
@@ -83,8 +82,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                   (
                                     // Case 1: Ending without adding a new presenter score (e.g., no active presenter, or queue was empty)
                                     (
-                                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) &&
-                                      request.resource.data.presenterScores == resource.data.presenterScores // Scores do not change
+                                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionEnded', 'isRoundActive']) 
                                     ) ||
                                     // Case 2: Ending AND adding a new presenter score
                                     (
@@ -105,32 +103,28 @@ ClassVote is a real-time, interactive web application where users create or join
                                       )
                                     )
                                   ) &&
-                                  // These fields should generally not change during the "end session" action itself, 
-                                  // or their values are taken from the final state of the round.
-                                  request.resource.data.likeClicks == resource.data.likeClicks && 
-                                  request.resource.data.dislikeClicks == resource.data.dislikeClicks &&
-                                  request.resource.data.soundsEnabled == resource.data.soundsEnabled &&
-                                  request.resource.data.resultsVisible == resource.data.resultsVisible &&
-                                  request.resource.data.participants == resource.data.participants &&
-                                  request.resource.data.presenterQueue == resource.data.presenterQueue && // Presenter queue itself doesn't change on end
-                                  request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex && // Index doesn't change on end
-                                  request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved && // isPermanentlySaved can be toggled separately
-                                  request.resource.data.votingMode == resource.data.votingMode // votingMode doesn't change on end
+                                  // These fields should generally not change during the "end session" action itself (unless part of diff)
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['likeClicks']) ? request.resource.data.likeClicks == resource.data.likeClicks : true) &&
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['dislikeClicks']) ? request.resource.data.dislikeClicks == resource.data.dislikeClicks : true) &&
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['soundsEnabled']) ? request.resource.data.soundsEnabled == resource.data.soundsEnabled : true) &&
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['resultsVisible']) ? request.resource.data.resultsVisible == resource.data.resultsVisible : true) &&
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['participants']) ? request.resource.data.participants == resource.data.participants : true) &&
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['presenterQueue']) ? request.resource.data.presenterQueue == resource.data.presenterQueue : true) && 
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['currentPresenterIndex']) ? request.resource.data.currentPresenterIndex == resource.data.currentPresenterIndex : true) && 
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['isPermanentlySaved']) ? request.resource.data.isPermanentlySaved == resource.data.isPermanentlySaved : true) &&
+                                  (request.resource.data.diff(resource.data).affectedKeys().hasAny(['votingMode']) ? request.resource.data.votingMode == resource.data.votingMode : true)
                                 ) ||
                                 // Toggle soundsEnabled
                                 (
-                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soundsEnabled']) &&
-                                  request.resource.data.soundsEnabled != resource.data.soundsEnabled
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['soundsEnabled'])
                                 ) ||
                                 // Toggle resultsVisible
                                 (
-                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resultsVisible']) &&
-                                  request.resource.data.resultsVisible != resource.data.resultsVisible
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resultsVisible'])
                                 ) ||
                                 // Toggle votingMode
                                 (
                                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votingMode']) &&
-                                  request.resource.data.votingMode != resource.data.votingMode &&
                                   (request.resource.data.votingMode == 'single' || request.resource.data.votingMode == 'infinite')
                                 ) ||
                                 // Manage Presenter Queue (add, remove, clear)
@@ -156,7 +150,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                   (
                                     ( request.resource.data.diff(resource.data).affectedKeys().hasAny(['likeClicks', 'dislikeClicks', 'isRoundActive', 'presenterScores']) ) ?
                                     ( request.resource.data.likeClicks == 0 && request.resource.data.dislikeClicks == 0 && request.resource.data.isRoundActive == true && 
-                                      (request.resource.data.diff(resource.data).affectedKeys().has('presenterScores') ? request.resource.data.presenterScores.size() == 0 : true)
+                                      (request.resource.data.diff(resource.data).affectedKeys().hasAny(['presenterScores']) ? request.resource.data.presenterScores.size() == 0 : true)
                                     ) 
                                     : true // If these fields are not part of the diff, no specific value check needed for them
                                   )
@@ -206,20 +200,9 @@ ClassVote is a real-time, interactive web application where users create or join
                                 ) ||
                                 // Admin toggling permanent save status (on session page)
                                 (
-                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
-                                  request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved
+                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved'])
                                 )
                                 // Ensure other critical fields not explicitly part of the diff are unchanged for ALL admin ops above
-                                // These are checked if not part of the hasOnly list for the specific action
-                                // (This is a safeguard - hasOnly should be the primary check)
-                                && (
-                                  request.resource.data.diff(resource.data).affectedKeys().has('adminUid') ? request.resource.data.adminUid == resource.data.adminUid : true
-                                ) && (
-                                  request.resource.data.diff(resource.data).affectedKeys().has('createdAt') ? request.resource.data.createdAt == resource.data.createdAt : true
-                                ) && (
-                                  request.resource.data.diff(resource.data).affectedKeys().has('sessionType') ? request.resource.data.sessionType == resource.data.sessionType : true
-                                )
-                                // And ensure certain fields ARE NOT CHANGED unless the specific rule above allows it
                                 && (
                                   !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminUid', 'createdAt', 'sessionType'])
                                 )
@@ -317,8 +300,7 @@ ClassVote is a real-time, interactive web application where users create or join
                                 (
                                   // Admin toggling permanent save status on an ended session
                                   (
-                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved']) &&
-                                    request.resource.data.isPermanentlySaved != resource.data.isPermanentlySaved
+                                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanentlySaved'])
                                   )
                                 )
                                 // Ensure other fields that shouldn't change on an ended session remain the same
@@ -524,6 +506,7 @@ ClassVote is a real-time, interactive web application where users create or join
 
 
     
+
 
 
 
