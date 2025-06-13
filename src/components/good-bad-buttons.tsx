@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { ThumbsUp, ThumbsDown } from "lucide-react";
 import * as Tone from "tone";
@@ -22,7 +22,7 @@ interface GoodBadButtonsProps {
   soundsEnabled: boolean;
   roundId?: number; 
   votingMode: SessionData['votingMode'];
-  generalRoundInstanceId?: number; // New prop
+  generalRoundInstanceId?: number; 
 }
 
 const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({ 
@@ -31,7 +31,7 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
     soundsEnabled, 
     roundId, 
     votingMode,
-    generalRoundInstanceId = 1 // Default to 1 if not provided
+    generalRoundInstanceId = 1 
 }) => {
   const { toast } = useToast();
   const likeSynth = useRef<Tone.Synth | null>(null);
@@ -42,25 +42,31 @@ const GoodBadButtons: React.FC<GoodBadButtonsProps> = ({
   const [hasVotedInCurrentRound, setHasVotedInCurrentRound] = useState(false);
   
   const getLocalStorageKey = useCallback(() => {
-    if (roundId === -1 || roundId === undefined) { // General session
+    if (roundId === -1 || roundId === undefined) { 
       return `hasVoted_${sessionId}_general_${generalRoundInstanceId}`;
     }
-    return `hasVoted_${sessionId}_${roundId}`; // Presenter round
+    return `hasVoted_${sessionId}_${roundId}`; 
   }, [sessionId, roundId, generalRoundInstanceId]);
 
   useEffect(() => {
+    console.log("[GoodBadButtons EFFECT] Triggered with props:", { isRoundActiveProp, roundId, sessionId, votingMode, generalRoundInstanceId });
     setInternalIsRoundActive(isRoundActiveProp);
     const currentKey = getLocalStorageKey();
+    console.log("[GoodBadButtons EFFECT] localStorageKey:", currentKey);
 
     if (votingMode === 'single') {
       if (isRoundActiveProp) {
         const votedInThisSpecificRound = localStorage.getItem(currentKey) === 'true';
+        console.log(`[GoodBadButtons EFFECT] localStorage.getItem('${currentKey}') found:`, localStorage.getItem(currentKey));
         setHasVotedInCurrentRound(votedInThisSpecificRound);
+        console.log("[GoodBadButtons EFFECT] Setting hasVotedInCurrentRound to:", votedInThisSpecificRound);
       } else {
         setHasVotedInCurrentRound(false); 
+        console.log("[GoodBadButtons EFFECT] isRoundActiveProp is false, setting hasVotedInCurrentRound to false");
       }
     } else { 
       setHasVotedInCurrentRound(false); 
+      console.log("[GoodBadButtons EFFECT] votingMode is not 'single', setting hasVotedInCurrentRound to false");
     }
   }, [isRoundActiveProp, roundId, sessionId, votingMode, generalRoundInstanceId, getLocalStorageKey]);
 
