@@ -1,9 +1,9 @@
 
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, Firestore } from "firebase/firestore"; // Import Firestore type
+import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
+import { getFirestore, type Firestore } from "firebase/firestore";
 import { 
   getAuth, 
-  Auth, // Import Auth type
+  type Auth,
   signInAnonymously, 
   onAuthStateChanged,
   GoogleAuthProvider,
@@ -14,7 +14,7 @@ import {
   sendPasswordResetEmail,
   deleteUser 
 } from "firebase/auth";
-import { getAnalytics, Analytics } from "firebase/analytics"; // Import Analytics type
+import { getAnalytics, type Analytics, isSupported as isAnalyticsSupported } from "firebase/analytics";
 
 // Your web app's Firebase configuration
 // PLEASE DOUBLE-CHECK these values against your Firebase project settings:
@@ -30,38 +30,30 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-let app;
+let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
 } else {
   app = getApp();
 }
 
-// Initialize Analytics
+// Initialize Firestore and Auth. 
+// These are generally safe to call after initializeApp.
+// Errors during operations (like getDoc) will be caught where those operations are performed.
+const db: Firestore = getFirestore(app);
+const auth: Auth = getAuth(app);
+
+// Initialize Analytics (conditionally and asynchronously)
 let analytics: Analytics | undefined;
-try {
-  if (typeof window !== 'undefined') {
-    analytics = getAnalytics(app);
-  }
-} catch (error) {
-  console.warn("Firebase Analytics initialization error:", (error instanceof Error ? error.message : String(error)));
-}
-
-let db: Firestore;
-let auth: Auth;
-
-try {
-  db = getFirestore(app);
-  auth = getAuth(app);
-} catch (error) {
-  console.error("CRITICAL FIREBASE INITIALIZATION ERROR (during getFirestore/getAuth): ", (error instanceof Error ? error.message : String(error)));
-  // Depending on how critical these are, you might want to throw the error
-  // or ensure db and auth are handled as potentially undefined elsewhere.
-  // For now, assuming they initialize for the purpose of this fix.
-  // @ts-ignore if TS complains db/auth might not be assigned before export in strict mode
-  if (!db) db = undefined as any; 
-  // @ts-ignore
-  if (!auth) auth = undefined as any;
+if (typeof window !== 'undefined') {
+  isAnalyticsSupported().then((supported) => {
+    if (supported) {
+      analytics = getAnalytics(app);
+    }
+  }).catch(error => {
+    // Log error but don't let it break the app; analytics is non-critical.
+    console.warn("Firebase Analytics could not be initialized:", (error instanceof Error ? error.message : String(error)));
+  });
 }
 
 const googleProvider = new GoogleAuthProvider();
@@ -71,7 +63,7 @@ export {
   db, 
   auth, 
   googleProvider, 
-  analytics, // Export typed analytics
+  analytics,
   signInWithPopup, 
   firebaseSignOut, 
   signInAnonymously,
